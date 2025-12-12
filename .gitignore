@@ -1,0 +1,10 @@
+.idea/
+.gocache/
+.gomodcache/
+
+*.out
+*.prof
+*.test
+coverage.out
+
+.DS_Store
