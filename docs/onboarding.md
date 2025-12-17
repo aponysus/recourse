@@ -74,8 +74,31 @@ The repository is modular by design:
 
 ## Contributing
 
+### Local dev loop
+
 Run tests locally:
 
 ```bash
 go test ./...
 ```
+
+Optional checks:
+
+```bash
+go test -race ./...
+go vet ./...
+```
+
+Format code:
+
+```bash
+gofmt -w .
+```
+
+### Project conventions
+
+- Keep core packages **stdlib-only**; put non-stdlib deps in `integrations/*`.
+- Prefer additive API changes during `v0.x`; avoid breaking exported APIs.
+- Add/adjust tests when changing executor behavior, classification, or observability.
+- Keep policy keys low-cardinality (no IDs/tenants/paths in keys).
+- Keep `docs/` in sync when changing user-facing behavior.
