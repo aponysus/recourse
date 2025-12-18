@@ -1,7 +1,9 @@
 .idea/
 .gocache/
 .gomodcache/
+.venv/
 plan/
+site/
 
 
 *.out

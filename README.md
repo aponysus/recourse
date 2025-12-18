@@ -4,6 +4,8 @@ Policy-driven, observability-first resilience library in Go for distributed syst
 
 This repository is **early-stage**. Retry, budgets/backpressure, timelines, and outcome classifiers exist today; hedging, remote control plane, and integrations are still in progress.
 
+Docs site: https://aponysus.github.io/rego/
+
 ## What you get today
 
 - A retry executor with bounded attempts, backoff/jitter, and per-attempt/overall timeouts
@@ -273,6 +275,15 @@ Run tests:
 
 ```bash
 go test ./...
+```
+
+Build docs locally:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-docs.txt
+mkdocs serve
 ```
 
 ## License

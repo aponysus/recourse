@@ -19,7 +19,7 @@ Registries are thread-safe maps from a low-cardinality name (string) to an imple
 
 At a high level:
 
-1. Create a registry (`classify.NewRegistry()`, `budget.NewRegistry()`, `hedge.NewTriggerRegistry()`).
+1. Create a registry (`classify.NewRegistry()`, `budget.NewRegistry()`).
 2. Register your implementation under a name (e.g. `"my_classifier"`).
 3. Configure your executor to use that registry.
 4. Reference the name from policy (`Retry.ClassifierName`, etc.).

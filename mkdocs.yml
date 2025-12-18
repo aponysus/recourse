@@ -1,0 +1,49 @@
+site_name: rego
+site_description: Policy-driven, observability-first resilience library for Go services.
+site_url: https://aponysus.github.io/rego/
+
+repo_url: https://github.com/aponysus/rego
+repo_name: aponysus/rego
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: indigo
+    accent: deep purple
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+  icon:
+    logo: material/book-open-page-variant
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - Concepts:
+      - Policy keys: concepts/policy-keys.md
+      - Policies & providers: concepts/policies.md
+      - Classifiers: concepts/classifiers.md
+      - Observability: concepts/observability.md
+      - Budgets & backpressure: concepts/budgets.md
+  - Extending: extending.md
+  - Roadmap: roadmap.md
+  - Contributing:
+      - Onboarding: onboarding.md
+
