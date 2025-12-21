@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aponysus/recourse/budget"
 	"github.com/aponysus/recourse/controlplane"
 	"github.com/aponysus/recourse/observe"
 	"github.com/aponysus/recourse/policy"
@@ -157,6 +158,92 @@ func TestDoValue_FastPath_AttemptInfoInContext(t *testing.T) {
 	}
 }
 
+func TestExecutor_Observer_BudgetDecisions(t *testing.T) {
+	key := policy.PolicyKey{Name: "budget_event"}
+	obs := &testObserver{}
+
+	// Create a budget implementation that allows
+	budgets := budget.NewRegistry()
+	budgets.MustRegister("allow", budget.UnlimitedBudget{})
+	budgets.MustRegister("deny", denySecondAttemptBudget{}) // Uses existing denySecondAttemptBudget from budgets_test.go if accessible (same package)
+	// Actually denySecondAttemptBudget is in budgets_test.go but unexported.
+	// We can redefine or reuse if in same package. Ideally verify reuse.
+	// Since tests in same package 'retry' share scope, it should work.
+
+	exec := NewExecutor(ExecutorOptions{
+		Provider: &controlplane.StaticProvider{
+			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
+				key: {
+					Key: key,
+					Retry: policy.RetryPolicy{
+						MaxAttempts: 2,
+						Budget:      policy.BudgetRef{Name: "allow", Cost: 1},
+					},
+				},
+			},
+		},
+		Budgets:  budgets,
+		Observer: obs,
+	})
+	exec.sleep = func(context.Context, time.Duration) error { return nil }
+
+	// Run successful with unlimited budget
+	_, err := DoValue[int](context.Background(), exec, key, func(ctx context.Context) (int, error) {
+		return 1, nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(obs.budgetDecisions) != 1 {
+		t.Fatalf("expected 1 budget decision, got %d", len(obs.budgetDecisions))
+	}
+	evt := obs.budgetDecisions[0]
+	if !evt.Allowed {
+		t.Errorf("expected allowed=true")
+	}
+	if evt.Reason != budget.ReasonAllowed {
+		t.Errorf("expected reason=allowed, got %s", evt.Reason)
+	}
+
+	// Now try with denying budget
+	exec = NewExecutor(ExecutorOptions{
+		Provider: &controlplane.StaticProvider{
+			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
+				key: {
+					Key: key,
+					Retry: policy.RetryPolicy{
+						MaxAttempts: 2,
+						Budget:      policy.BudgetRef{Name: "missing_does_not_exist", Cost: 1},
+					},
+				},
+			},
+		},
+		Budgets:           budgets,
+		Observer:          obs,
+		MissingBudgetMode: FailureDeny,
+	})
+	obs.budgetDecisions = nil // reset
+
+	_, err = DoValue[int](context.Background(), exec, key, func(ctx context.Context) (int, error) {
+		return 1, nil
+	})
+	if err == nil {
+		t.Fatal("expected error due to missing budget")
+	}
+
+	if len(obs.budgetDecisions) != 1 {
+		t.Fatalf("expected 1 budget decision, got %d", len(obs.budgetDecisions))
+	}
+	evt = obs.budgetDecisions[0]
+	if evt.Allowed {
+		t.Errorf("expected allowed=false")
+	}
+	if evt.Reason != budget.ReasonBudgetNotFound {
+		t.Errorf("expected reason=budget_not_found, got %s", evt.Reason)
+	}
+}
+
 type testObserver struct {
 	starts    int
 	attempts  []observe.AttemptRecord
@@ -166,7 +253,8 @@ type testObserver struct {
 	lastSuccess observe.Timeline
 	lastFailure observe.Timeline
 
-	attemptInfos []observe.AttemptInfo
+	attemptInfos    []observe.AttemptInfo
+	budgetDecisions []observe.BudgetDecisionEvent
 }
 
 func (o *testObserver) OnStart(context.Context, policy.PolicyKey, policy.EffectivePolicy) {
@@ -183,6 +271,10 @@ func (o *testObserver) OnAttempt(ctx context.Context, _ policy.PolicyKey, rec ob
 func (o *testObserver) OnHedgeSpawn(context.Context, policy.PolicyKey, observe.AttemptRecord) {}
 
 func (o *testObserver) OnHedgeCancel(context.Context, policy.PolicyKey, observe.AttemptRecord, string) {
+}
+
+func (o *testObserver) OnBudgetDecision(_ context.Context, e observe.BudgetDecisionEvent) {
+	o.budgetDecisions = append(o.budgetDecisions, e)
 }
 
 func (o *testObserver) OnSuccess(_ context.Context, _ policy.PolicyKey, tl observe.Timeline) {

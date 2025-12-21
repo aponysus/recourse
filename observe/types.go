@@ -4,9 +4,22 @@ import (
 	"context"
 	"time"
 
+	"github.com/aponysus/recourse/budget"
 	"github.com/aponysus/recourse/classify"
 	"github.com/aponysus/recourse/policy"
 )
+
+// BudgetDecisionEvent describes a budget gating decision.
+type BudgetDecisionEvent struct {
+	Key        policy.PolicyKey
+	Attempt    int
+	Kind       budget.AttemptKind
+	BudgetName string
+	Cost       int
+	Mode       string // "allow", "deny", "fallback", "allow_unsafe"
+	Allowed    bool
+	Reason     string
+}
 
 // AttemptRecord describes a single attempt (or hedge) execution.
 type AttemptRecord struct {
@@ -52,6 +65,8 @@ type Observer interface {
 	// Hedging hooks (no-ops until Phase 5).
 	OnHedgeSpawn(ctx context.Context, key policy.PolicyKey, rec AttemptRecord)
 	OnHedgeCancel(ctx context.Context, key policy.PolicyKey, rec AttemptRecord, reason string)
+
+	OnBudgetDecision(ctx context.Context, ev BudgetDecisionEvent)
 
 	OnSuccess(ctx context.Context, key policy.PolicyKey, tl Timeline)
 	OnFailure(ctx context.Context, key policy.PolicyKey, tl Timeline)

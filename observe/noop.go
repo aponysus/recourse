@@ -14,5 +14,6 @@ func (NoopObserver) OnAttempt(context.Context, policy.PolicyKey, AttemptRecord) 
 func (NoopObserver) OnHedgeSpawn(context.Context, policy.PolicyKey, AttemptRecord)     {}
 func (NoopObserver) OnHedgeCancel(context.Context, policy.PolicyKey, AttemptRecord, string) {
 }
+func (NoopObserver) OnBudgetDecision(context.Context, BudgetDecisionEvent) {}
 func (NoopObserver) OnSuccess(context.Context, policy.PolicyKey, Timeline) {}
 func (NoopObserver) OnFailure(context.Context, policy.PolicyKey, Timeline) {}

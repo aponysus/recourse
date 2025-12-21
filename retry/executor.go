@@ -3,7 +3,9 @@ package retry
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -21,9 +23,10 @@ type OperationValue[T any] func(ctx context.Context) (T, error)
 type FailureMode int
 
 const (
-	FailureFallback FailureMode = iota // use safe defaults
-	FailureAllow                       // proceed without constraint
-	FailureDeny                        // fail fast
+	FailureFallback    FailureMode = iota // use safe defaults
+	FailureAllow                          // proceed without constraint
+	FailureDeny                           // fail fast
+	FailureAllowUnsafe                    // proceed without constraint (explicit unsafe opt-in)
 )
 
 // ErrNoPolicy is returned when MissingPolicyMode=FailureDeny and the executor
@@ -69,6 +72,21 @@ func (e *NoClassifierError) Error() string {
 
 func (e *NoClassifierError) Is(target error) bool { return target == ErrNoClassifier }
 
+type PanicError struct {
+	Component string
+	Key       policy.PolicyKey
+	Value     any
+	Stack     []byte
+}
+
+func (e *PanicError) Error() string {
+	msg := "recourse: panic in " + e.Component
+	if e.Value != nil {
+		msg += fmt.Sprintf(": %v", e.Value)
+	}
+	return msg
+}
+
 type ExecutorOptions struct {
 	Provider controlplane.PolicyProvider
 	Observer observe.Observer // nil → NoopObserver
@@ -82,7 +100,7 @@ type ExecutorOptions struct {
 	// Failure modes for missing components (used in later phases).
 	MissingPolicyMode     FailureMode // default: FailureFallback
 	MissingClassifierMode FailureMode // default: FailureFallback (Phase 3+)
-	MissingBudgetMode     FailureMode // default: FailureAllow (Phase 4+)
+	MissingBudgetMode     FailureMode // default: FailureDeny (fail-closed)
 	MissingTriggerMode    FailureMode // default: FailureFallback/disable hedging (Phase 5+)
 
 	// Panic isolation for user hooks (Phase 3+).
@@ -120,7 +138,7 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 
 		missingPolicyMode:     normalizeFailureMode(opts.MissingPolicyMode, FailureFallback),
 		missingClassifierMode: normalizeFailureMode(opts.MissingClassifierMode, FailureFallback),
-		missingBudgetMode:     normalizeFailureMode(opts.MissingBudgetMode, FailureAllow),
+		missingBudgetMode:     normalizeFailureMode(opts.MissingBudgetMode, FailureDeny),
 		missingTriggerMode:    normalizeFailureMode(opts.MissingTriggerMode, FailureFallback),
 
 		sleep: sleepWithContext,
@@ -147,7 +165,7 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 
 func normalizeFailureMode(mode FailureMode, defaultMode FailureMode) FailureMode {
 	switch mode {
-	case FailureFallback, FailureAllow, FailureDeny:
+	case FailureFallback, FailureAllow, FailureDeny, FailureAllowUnsafe:
 		return mode
 	default:
 		return defaultMode
@@ -277,7 +295,10 @@ func doValueFast[T any](ctx context.Context, exec *Executor, key policy.PolicyKe
 		last = val
 		lastErr = err
 
-		out := classifyWithRecovery(exec.recoverPanics, classifier, val, err)
+		out, panicErr := classifyWithRecovery(exec.recoverPanics, classifier, val, err, key)
+		if panicErr != nil {
+			return last, terminalError(ctx, panicErr, out)
+		}
 		if out.Kind == classify.OutcomeSuccess {
 			return val, nil
 		}
@@ -448,7 +469,7 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 		last = val
 		lastErr = err
 
-		outcome := classifyWithRecovery(exec.recoverPanics, classifier, val, err)
+		outcome, panicErr := classifyWithRecovery(exec.recoverPanics, classifier, val, err, key)
 		annotateClassifierFallback(&outcome, cmeta)
 
 		rec := observe.AttemptRecord{
@@ -463,6 +484,14 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 		}
 		tl.Attempts = append(tl.Attempts, rec)
 		exec.observer.OnAttempt(attemptCtx, key, rec)
+
+		if panicErr != nil {
+			terr := terminalError(ctx, panicErr, outcome)
+			tl.End = exec.clock()
+			tl.FinalErr = terr
+			exec.observer.OnFailure(ctx, key, tl)
+			return last, tl, terr
+		}
 
 		if outcome.Kind == classify.OutcomeSuccess {
 			tl.End = exec.clock()
@@ -518,7 +547,25 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 func resolvePolicyWithAttributes(ctx context.Context, exec *Executor, key policy.PolicyKey) (policy.EffectivePolicy, map[string]string, error) {
 	attrs := make(map[string]string)
 
-	pol, err := exec.provider.GetEffectivePolicy(ctx, key)
+	var pol policy.EffectivePolicy
+	var err error
+
+	func() {
+		if exec.recoverPanics {
+			defer func() {
+				if r := recover(); r != nil {
+					err = &PanicError{
+						Component: "policy_provider",
+						Key:       key,
+						Value:     r,
+						Stack:     debug.Stack(),
+					}
+				}
+			}()
+		}
+		pol, err = exec.provider.GetEffectivePolicy(ctx, key)
+	}()
+
 	if err != nil {
 		attrs["policy_error"] = policyErrorKind(err)
 		attrs["missing_policy_mode"] = failureModeString(exec.missingPolicyMode)
@@ -530,6 +577,10 @@ func resolvePolicyWithAttributes(ctx context.Context, exec *Executor, key policy
 			} else {
 				pol.Key = key
 			}
+			// If it's a PanicError, wrapping it in NoPolicyError might hide it?
+			// NoPolicyError wraps the error, so Is(ErrNoPolicy) works.
+			// But maybe we want the panic to surface more loudly?
+			// The contract says ResolvePolicy returns error if failed.
 			return pol, attrs, &NoPolicyError{Key: key, Err: err}
 		case FailureAllow:
 			pol = policy.EffectivePolicy{Key: key, Retry: policy.RetryPolicy{MaxAttempts: 1}}
@@ -582,13 +633,33 @@ func failureModeString(mode FailureMode) string {
 		return "allow"
 	case FailureDeny:
 		return "deny"
+	case FailureAllowUnsafe:
+		return "allow_unsafe"
 	default:
 		return "unknown"
 	}
 }
 
 func resolvePolicyFast(ctx context.Context, exec *Executor, key policy.PolicyKey) (policy.EffectivePolicy, error) {
-	pol, err := exec.provider.GetEffectivePolicy(ctx, key)
+	var pol policy.EffectivePolicy
+	var err error
+
+	func() {
+		if exec.recoverPanics {
+			defer func() {
+				if r := recover(); r != nil {
+					err = &PanicError{
+						Component: "policy_provider",
+						Key:       key,
+						Value:     r,
+						Stack:     debug.Stack(),
+					}
+				}
+			}()
+		}
+		pol, err = exec.provider.GetEffectivePolicy(ctx, key)
+	}()
+
 	if err != nil {
 		switch exec.missingPolicyMode {
 		case FailureDeny:
@@ -714,7 +785,48 @@ func resolveClassifier(exec *Executor, pol policy.EffectivePolicy) (classify.Cla
 		return classifier, meta, nil
 	}
 
-	if c, ok := exec.classifiers.Get(meta.requested); ok {
+	var c classify.Classifier
+	var ok bool
+	var panicErr error
+
+	func() {
+		if exec.recoverPanics {
+			defer func() {
+				if r := recover(); r != nil {
+					panicErr = &PanicError{
+						Component: "classifier_registry",
+						Key:       pol.Key, // Best effort key
+						Value:     r,
+						Stack:     debug.Stack(),
+					}
+				}
+			}()
+		}
+		c, ok = exec.classifiers.Get(meta.requested)
+	}()
+
+	if panicErr != nil {
+		// Treat panic as not found or error?
+		// If registry panics, we probably can't get the classifier.
+		// We treat it as an error resolving classifier.
+		// If missingClassifierMode is Deny, we return error.
+		// If Fallback, we use default.
+
+		// Let's use the missingClassifierMode logic but with the panic error.
+		meta.notFound = true
+		// Actually panic in registry is distinct from "not found".
+		// But for resilience, falling back is good if configured.
+
+		switch exec.missingClassifierMode {
+		case FailureDeny:
+			return nil, meta, panicErr
+		default:
+			// Fallback
+			return classifier, meta, nil
+		}
+	}
+
+	if ok {
 		return c, meta, nil
 	}
 
@@ -739,11 +851,17 @@ func annotateClassifierFallback(out *classify.Outcome, meta classifierMeta) {
 	out.Attributes["classifier_fallback"] = "default"
 }
 
-func classifyWithRecovery(recoverPanics bool, classifier classify.Classifier, value any, err error) (out classify.Outcome) {
+func classifyWithRecovery(recoverPanics bool, classifier classify.Classifier, value any, err error, key policy.PolicyKey) (out classify.Outcome, panicErr error) {
 	if recoverPanics {
 		defer func() {
 			if r := recover(); r != nil {
 				out = classify.Outcome{Kind: classify.OutcomeAbort, Reason: "panic_in_classifier"}
+				panicErr = &PanicError{
+					Component: "classifier",
+					Key:       key,
+					Value:     r,
+					Stack:     debug.Stack(),
+				}
 			}
 		}()
 	}
@@ -768,7 +886,7 @@ func classifyWithRecovery(recoverPanics bool, classifier classify.Classifier, va
 			out.Reason = "unknown_outcome"
 		}
 	}
-	return out
+	return out, nil
 }
 
 func terminalError(ctx context.Context, opErr error, out classify.Outcome) error {

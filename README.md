@@ -9,7 +9,7 @@ Docs site: https://aponysus.github.io/recourse/
 ## What you get today
 
 - A retry executor with bounded attempts, backoff/jitter, and per-attempt/overall timeouts
-- Per-attempt budgets/backpressure to prevent retry storms (opt-in via `retry.ExecutorOptions.Budgets`; fail-open by default)
+- Per-attempt budgets/backpressure to prevent retry storms (opt-in via `retry.ExecutorOptions.Budgets`; fail-closed by default)
 - A low-cardinality key model (`"svc.Method"`) that policies are attached to
 - Outcome classifiers for protocol/domain-aware retry decisions
 - Structured, per-attempt observability via `observe.Timeline`
@@ -65,6 +65,7 @@ Every call can produce an `observe.Timeline`:
 - One `Timeline` per call
 - One `AttemptRecord` per attempt
 - Optional observer callbacks (`observe.Observer`) for logs/metrics/tracing integrations
+- Budget gating decisions (`observe.BudgetDecisionEvent`)
 
 ## Quick start
 
@@ -194,6 +195,14 @@ If the provider returns an error, the executor uses `ExecutorOptions.MissingPoli
 - `retry.FailureFallback` (default): use a safe default policy
 - `retry.FailureAllow`: run a single attempt (no retries)
 - `retry.FailureDeny`: fail fast with `retry.ErrNoPolicy` (wrapped in `*retry.NoPolicyError`)
+
+### Missing budget behavior
+
+If a policy references a budget that is missing (or the registry is nil), the executor uses `ExecutorOptions.MissingBudgetMode`:
+
+- `retry.FailureDeny` (default): fail fast (fail-closed)
+- `retry.FailureAllow`: allow the attempt (fail-open)
+- `retry.FailureAllowUnsafe`: allow the attempt (explicit unsafe opt-in)
 
 ## Observers
 

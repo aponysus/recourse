@@ -16,6 +16,8 @@ func (BaseObserver) OnAttempt(context.Context, policy.PolicyKey, AttemptRecord) 
 func (BaseObserver) OnHedgeSpawn(context.Context, policy.PolicyKey, AttemptRecord)     {}
 func (BaseObserver) OnHedgeCancel(context.Context, policy.PolicyKey, AttemptRecord, string) {
 }
+
+func (BaseObserver) OnBudgetDecision(context.Context, BudgetDecisionEvent) {}
 func (BaseObserver) OnSuccess(context.Context, policy.PolicyKey, Timeline) {}
 func (BaseObserver) OnFailure(context.Context, policy.PolicyKey, Timeline) {}
 
@@ -52,6 +54,14 @@ func (m MultiObserver) OnHedgeCancel(ctx context.Context, key policy.PolicyKey, 
 	for _, o := range m.Observers {
 		if o != nil {
 			o.OnHedgeCancel(ctx, key, rec, reason)
+		}
+	}
+}
+
+func (m MultiObserver) OnBudgetDecision(ctx context.Context, ev BudgetDecisionEvent) {
+	for _, o := range m.Observers {
+		if o != nil {
+			o.OnBudgetDecision(ctx, ev)
 		}
 	}
 }

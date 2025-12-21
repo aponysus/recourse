@@ -14,13 +14,7 @@ const (
 	KindHedge
 )
 
-// Standard Decision.Reason strings.
-const (
-	ReasonNoBudget       = "no_budget"
-	ReasonBudgetNotFound = "budget_not_found"
-	ReasonBudgetDenied   = "budget_denied"
-	ReasonPanicInBudget  = "panic_in_budget"
-)
+// Standard Decision.Reason strings are defined in reasons.go.
 
 // Decision is the result of a budget check.
 type Decision struct {
