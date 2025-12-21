@@ -126,7 +126,9 @@ type Executor struct {
 	sleep func(ctx context.Context, d time.Duration) error
 }
 
-func NewExecutor(opts ExecutorOptions) *Executor {
+// NewExecutorFromOptions creates an Executor using a configuration struct.
+// This is useful for configuration-file driven setups or legacy code.
+func NewExecutorFromOptions(opts ExecutorOptions) *Executor {
 	exec := &Executor{
 		provider:          opts.Provider,
 		observer:          opts.Observer,
@@ -163,6 +165,137 @@ func NewExecutor(opts ExecutorOptions) *Executor {
 	return exec
 }
 
+// Global default executor (used by DefaultExecutor())
+var defaultExecutor = NewExecutor()
+
+// DefaultExecutor returns a shared, default-configured executor.
+func DefaultExecutor() *Executor {
+	return defaultExecutor
+}
+
+type executorConfig struct {
+	opts           ExecutorOptions
+	staticPolicies map[policy.PolicyKey]policy.EffectivePolicy
+}
+
+// ExecutorOption configures an Executor.
+type ExecutorOption func(*executorConfig)
+
+// NewExecutor creates an Executor with the given options.
+func NewExecutor(opts ...ExecutorOption) *Executor {
+	cfg := &executorConfig{}
+
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	// If static policies were provided but no provider, make a StaticProvider.
+	// If a provider was explicitly set, static policies are ignored (or we could try to merge/error,
+	// but the plan says "Explicit provider: caller supplies ... Static provider builder: caller supplies policies").
+	// Implementation thought: if provider IS nil, and static policies exist, use StaticProvider.
+	// If provider exists, use it.
+
+	if cfg.opts.Provider == nil && len(cfg.staticPolicies) > 0 {
+		cfg.opts.Provider = &controlplane.StaticProvider{
+			Policies: cfg.staticPolicies,
+		}
+	}
+
+	return NewExecutorFromOptions(cfg.opts)
+}
+
+// WithProvider sets the policy provider.
+func WithProvider(p controlplane.PolicyProvider) ExecutorOption {
+	return func(c *executorConfig) {
+		c.opts.Provider = p
+	}
+}
+
+// WithObserver sets the observer.
+func WithObserver(o observe.Observer) ExecutorOption {
+	return func(c *executorConfig) {
+		c.opts.Observer = o
+	}
+}
+
+// WithClock sets the clock function (for testing).
+func WithClock(clock func() time.Time) ExecutorOption {
+	return func(c *executorConfig) {
+		c.opts.Clock = clock
+	}
+}
+
+// WithClassifierRegistry sets the classifier registry.
+func WithClassifierRegistry(r *classify.Registry) ExecutorOption {
+	return func(c *executorConfig) {
+		c.opts.Classifiers = r
+	}
+}
+
+// WithDefaultClassifier sets the default classifier.
+func WithDefaultClassifier(cls classify.Classifier) ExecutorOption {
+	return func(c *executorConfig) {
+		c.opts.DefaultClassifier = cls
+	}
+}
+
+// WithBudgetRegistry sets the budget registry.
+func WithBudgetRegistry(r *budget.Registry) ExecutorOption {
+	return func(c *executorConfig) {
+		c.opts.Budgets = r
+	}
+}
+
+// WithMissingPolicyMode sets the mode for handling missing policies.
+func WithMissingPolicyMode(mode FailureMode) ExecutorOption {
+	return func(c *executorConfig) {
+		c.opts.MissingPolicyMode = mode
+	}
+}
+
+// WithMissingClassifierMode sets the mode for handling missing classifiers.
+func WithMissingClassifierMode(mode FailureMode) ExecutorOption {
+	return func(c *executorConfig) {
+		c.opts.MissingClassifierMode = mode
+	}
+}
+
+// WithMissingBudgetMode sets the mode for handling missing budgets.
+func WithMissingBudgetMode(mode FailureMode) ExecutorOption {
+	return func(c *executorConfig) {
+		c.opts.MissingBudgetMode = mode
+	}
+}
+
+// WithRecoverPanics sets whether to capture and report panics in user code.
+func WithRecoverPanics(recover bool) ExecutorOption {
+	return func(c *executorConfig) {
+		c.opts.RecoverPanics = recover
+	}
+}
+
+// WithPolicy adds a static policy for a string key (e.g. "svc.Method").
+func WithPolicy(key string, opts ...policy.Option) ExecutorOption {
+	return func(c *executorConfig) {
+		if c.staticPolicies == nil {
+			c.staticPolicies = make(map[policy.PolicyKey]policy.EffectivePolicy)
+		}
+		p := policy.New(key, opts...)
+		c.staticPolicies[p.Key] = p
+	}
+}
+
+// WithPolicyKey adds a static policy for a structured key.
+func WithPolicyKey(key policy.PolicyKey, opts ...policy.Option) ExecutorOption {
+	return func(c *executorConfig) {
+		if c.staticPolicies == nil {
+			c.staticPolicies = make(map[policy.PolicyKey]policy.EffectivePolicy)
+		}
+		p := policy.NewFromKey(key, opts...)
+		c.staticPolicies[p.Key] = p
+	}
+}
+
 func normalizeFailureMode(mode FailureMode, defaultMode FailureMode) FailureMode {
 	switch mode {
 	case FailureFallback, FailureAllow, FailureDeny, FailureAllowUnsafe:
@@ -184,26 +317,15 @@ func DoValue[T any](ctx context.Context, exec *Executor, key policy.PolicyKey, o
 	return val, err
 }
 
-func DoValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.PolicyKey, op OperationValue[T]) (T, observe.Timeline, error) {
-	return doValueInternal(ctx, exec, key, op, true)
-}
-
-func (e *Executor) DoWithTimeline(ctx context.Context, key policy.PolicyKey, op Operation) (observe.Timeline, error) {
-	_, tl, err := DoValueWithTimeline[struct{}](ctx, e, key, func(ctx context.Context) (struct{}, error) {
-		return struct{}{}, op(ctx)
-	})
-	return tl, err
-}
-
 func doValueInternal[T any](ctx context.Context, exec *Executor, key policy.PolicyKey, op OperationValue[T], wantTimeline bool) (T, observe.Timeline, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	if exec == nil {
-		exec = NewExecutor(ExecutorOptions{})
+		exec = NewExecutor()
 	} else if exec.provider == nil || exec.clock == nil || exec.sleep == nil || exec.observer == nil || exec.classifiers == nil || exec.defaultClassifier == nil {
-		exec = NewExecutor(ExecutorOptions{
+		exec = NewExecutorFromOptions(ExecutorOptions{
 			Provider:              exec.provider,
 			Observer:              exec.observer,
 			Clock:                 exec.clock,
@@ -218,12 +340,31 @@ func doValueInternal[T any](ctx context.Context, exec *Executor, key policy.Poli
 		})
 	}
 
-	fullTimeline := wantTimeline || !isNoopObserver(exec.observer)
+	capture, hasCapture := observe.TimelineCaptureFromContext(ctx)
+	fullTimeline := wantTimeline || hasCapture || !isNoopObserver(exec.observer)
+
 	if !fullTimeline {
-		val, err := doValueFast(ctx, exec, key, op)
+		// Even in fast path, we must ensure nested calls don't accidentally capture.
+		// Use a wrapped op that suppresses capture.
+		fastOp := func(c context.Context) (T, error) {
+			return op(observe.WithoutTimelineCapture(c))
+		}
+		val, err := doValueFast(ctx, exec, key, fastOp)
 		return val, observe.Timeline{}, err
 	}
-	return doValueWithTimeline(ctx, exec, key, op)
+
+	// For full timeline, we also want to suppress capture in the op, but doValueWithTimeline
+	// handles constructing the attempt context, so strictly speaking we can wrap here or there.
+	// Wrapping here is consistent.
+	safeOp := func(c context.Context) (T, error) {
+		return op(observe.WithoutTimelineCapture(c))
+	}
+
+	val, tl, err := doValueWithTimeline(ctx, exec, key, safeOp)
+	if capture != nil {
+		observe.StoreTimelineCapture(capture, &tl)
+	}
+	return val, tl, err
 }
 
 func doValueFast[T any](ctx context.Context, exec *Executor, key policy.PolicyKey, op OperationValue[T]) (T, error) {

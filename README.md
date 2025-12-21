@@ -11,8 +11,9 @@ Docs site: https://aponysus.github.io/recourse/
 - A retry executor with bounded attempts, backoff/jitter, and per-attempt/overall timeouts
 - Per-attempt budgets/backpressure to prevent retry storms (opt-in via `retry.ExecutorOptions.Budgets`; fail-closed by default)
 - A low-cardinality key model (`"svc.Method"`) that policies are attached to
+- Easy-to-use functional options for configuration (`policy.New("svc.Method", policy.HTTPDefaults())`)
 - Outcome classifiers for protocol/domain-aware retry decisions
-- Structured, per-attempt observability via `observe.Timeline`
+- Structured, per-attempt observability via `observe.Timeline` (captured via `observe.RecordTimeline`)
 - Optional callback-based observability via `observe.Observer`
 
 ## Requirements
@@ -115,10 +116,13 @@ Bad:
 When you need structured “what happened?” data:
 
 ```go
-user, tl, err := recourse.DoValueWithTimeline[User](ctx, "user-service.GetUser", op)
+ctx, capture := observe.RecordTimeline(ctx)
+user, err := recourse.DoValue(ctx, "user-service.GetUser", op)
 _ = user
 _ = err
 
+// Access timeline after call
+tl := capture.Timeline()
 for _, a := range tl.Attempts {
 	// a.Attempt, a.StartTime, a.EndTime, a.Err, ...
 }
@@ -135,40 +139,26 @@ The timeline also includes optional `tl.Attributes` such as:
 The facade uses a lazily-initialized default executor. For explicit wiring, build a `retry.Executor` and call the `retry` package directly.
 
 ```go
+```go
 import (
 	"context"
 	"time"
 
-	"github.com/aponysus/recourse/controlplane"
 	"github.com/aponysus/recourse/policy"
 	"github.com/aponysus/recourse/retry"
 )
 
-key := policy.ParseKey("user-service.GetUser")
+exec := retry.NewExecutor(
+	retry.WithPolicy("user-service.GetUser",
+		policy.MaxAttempts(5),
+		policy.Backoff(25*time.Millisecond, 250*time.Millisecond, 2.0),
+		policy.Jitter(policy.JitterEqual),
+		policy.OverallTimeout(2*time.Second),
+	),
+)
 
-exec := retry.NewExecutor(retry.ExecutorOptions{
-	Provider: &controlplane.StaticProvider{
-		Policies: map[policy.PolicyKey]policy.EffectivePolicy{
-			key: {
-				Key: key,
-				Retry: policy.RetryPolicy{
-					MaxAttempts:       5,
-					InitialBackoff:    25 * time.Millisecond,
-					MaxBackoff:        250 * time.Millisecond,
-					BackoffMultiplier: 2,
-					TimeoutPerAttempt: 250 * time.Millisecond,
-					OverallTimeout:    2 * time.Second,
-					Jitter:            policy.JitterEqual,
-				},
-			},
-		},
-	},
-})
-
-user, tl, err := retry.DoValueWithTimeline[User](context.Background(), exec, key, op)
-_ = user
-_ = tl
-_ = err
+// Use the executor
+user, err := retry.DoValue[User](ctx, exec, policy.ParseKey("user-service.GetUser"), op)
 ```
 
 ### Static policies (per-key and default)
@@ -176,16 +166,11 @@ _ = err
 Use `controlplane.StaticProvider` to supply policies from code:
 
 ```go
-provider := &controlplane.StaticProvider{
-	Default: policy.DefaultPolicyFor(policy.PolicyKey{}), // used for keys not in Policies
-	Policies: map[policy.PolicyKey]policy.EffectivePolicy{
-		policy.ParseKey("user-service.GetUser"): {
-			Retry: policy.RetryPolicy{MaxAttempts: 5},
-		},
-	},
-}
-
-exec := retry.NewExecutor(retry.ExecutorOptions{Provider: provider})
+exec := retry.NewExecutor(
+	retry.WithPolicy("user-service.GetUser", policy.MaxAttempts(5)),
+	// OR use a full provider
+	// retry.WithProvider(myProvider),
+)
 ```
 
 ### Missing policy behavior
@@ -243,11 +228,17 @@ You can fan out to multiple observers with `observe.MultiObserver`.
   - `recourse.DoValueWithTimeline[T](ctx, key string, op)`
   - `recourse.ParseKey(string) policy.PolicyKey`
 - Advanced (`github.com/aponysus/recourse/retry`)
-  - `retry.NewExecutor(retry.ExecutorOptions{...})`
+  - `retry.NewExecutor(opts...)`
+  - `retry.NewExecutorFromOptions(opts)` (legacy)
   - `retry.DoValue[T](ctx, exec, key, op)`
-  - `retry.DoValueWithTimeline[T](ctx, exec, key, op)`
   - `(*retry.Executor).Do(ctx, key, op)`
-  - `(*retry.Executor).DoWithTimeline(ctx, key, op)`
+- Policies (`github.com/aponysus/recourse/policy`)
+  - `policy.New(key, opts...)`
+  - `policy.HTTPDefaults()`, `policy.DatabaseDefaults()`
+  - `policy.MaxAttempts(n)`, `policy.Backoff(...)`
+- Observability
+  - `observe.RecordTimeline(ctx)`
+  - `observe.TimelineCaptureFromContext(ctx)`
 - Budgets (`github.com/aponysus/recourse/budget`)
   - `budget.NewRegistry()`
   - `budget.UnlimitedBudget{}`

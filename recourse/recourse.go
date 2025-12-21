@@ -3,7 +3,6 @@ package recourse
 import (
 	"context"
 
-	"github.com/aponysus/recourse/observe"
 	"github.com/aponysus/recourse/policy"
 	"github.com/aponysus/recourse/retry"
 )
@@ -22,14 +21,4 @@ func Do(ctx context.Context, key string, op retry.Operation) error {
 // DoValue executes op using the default executor and the policy for key.
 func DoValue[T any](ctx context.Context, key string, op retry.OperationValue[T]) (T, error) {
 	return retry.DoValue(ctx, retry.DefaultExecutor(), policy.ParseKey(key), op)
-}
-
-// DoWithTimeline executes op using the default executor and returns the Timeline.
-func DoWithTimeline(ctx context.Context, key string, op retry.Operation) (observe.Timeline, error) {
-	return retry.DefaultExecutor().DoWithTimeline(ctx, policy.ParseKey(key), op)
-}
-
-// DoValueWithTimeline executes op using the default executor and returns the Timeline.
-func DoValueWithTimeline[T any](ctx context.Context, key string, op retry.OperationValue[T]) (T, observe.Timeline, error) {
-	return retry.DoValueWithTimeline(ctx, retry.DefaultExecutor(), policy.ParseKey(key), op)
 }

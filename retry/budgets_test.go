@@ -9,6 +9,7 @@ import (
 
 	"github.com/aponysus/recourse/budget"
 	"github.com/aponysus/recourse/controlplane"
+	"github.com/aponysus/recourse/observe"
 	"github.com/aponysus/recourse/policy"
 )
 
@@ -43,7 +44,7 @@ func TestExecutor_BudgetDeniesSecondAttempt_StopsRetryAndReturnsLastErr(t *testi
 	budgets := budget.NewRegistry()
 	budgets.Register("b", denySecondAttemptBudget{})
 
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Budgets: budgets,
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
@@ -61,10 +62,12 @@ func TestExecutor_BudgetDeniesSecondAttempt_StopsRetryAndReturnsLastErr(t *testi
 
 	calls := 0
 	opErr := errors.New("first attempt error")
-	_, tl, err := DoValueWithTimeline[int](context.Background(), exec, key, func(context.Context) (int, error) {
+	ctx, capture := observe.RecordTimeline(context.Background())
+	_, err := DoValue[int](ctx, exec, key, func(context.Context) (int, error) {
 		calls++
 		return 0, opErr
 	})
+	tl := capture.Timeline()
 
 	if calls != 1 {
 		t.Fatalf("calls=%d, want 1", calls)
@@ -92,7 +95,7 @@ func TestExecutor_BudgetDeniesSecondAttempt_StopsRetryAndReturnsLastErr(t *testi
 func TestExecutor_MissingBudgetName_DeniesAttemptsByDefault(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
 
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Budgets: budget.NewRegistry(), // empty registry
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
@@ -109,10 +112,12 @@ func TestExecutor_MissingBudgetName_DeniesAttemptsByDefault(t *testing.T) {
 	exec.sleep = func(context.Context, time.Duration) error { return nil }
 
 	calls := 0
-	_, tl, err := DoValueWithTimeline[int](context.Background(), exec, key, func(context.Context) (int, error) {
+	ctx, capture := observe.RecordTimeline(context.Background())
+	_, err := DoValue[int](ctx, exec, key, func(context.Context) (int, error) {
 		calls++
 		return 0, errors.New("nope")
 	})
+	tl := capture.Timeline()
 
 	// Should fail immediately with budget error, 0 calls
 	if err == nil {
@@ -148,7 +153,7 @@ func TestExecutor_MissingBudgetName_DeniesAttemptsByDefault(t *testing.T) {
 func TestExecutor_MissingBudgetName_AllowsAttemptsWithUnsafeOptIn(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
 
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Budgets:           budget.NewRegistry(),
 		MissingBudgetMode: FailureAllowUnsafe,
 		Provider: &controlplane.StaticProvider{
@@ -166,10 +171,12 @@ func TestExecutor_MissingBudgetName_AllowsAttemptsWithUnsafeOptIn(t *testing.T) 
 	exec.sleep = func(context.Context, time.Duration) error { return nil }
 
 	calls := 0
-	_, tl, err := DoValueWithTimeline[int](context.Background(), exec, key, func(context.Context) (int, error) {
+	ctx, capture := observe.RecordTimeline(context.Background())
+	_, err := DoValue[int](ctx, exec, key, func(context.Context) (int, error) {
 		calls++
 		return 0, errors.New("nope")
 	})
+	tl := capture.Timeline()
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -197,7 +204,7 @@ func TestExecutor_BudgetRelease_CalledOncePerAllowedAttempt(t *testing.T) {
 	budgets := budget.NewRegistry()
 	budgets.Register("b", cb)
 
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Budgets: budgets,
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
@@ -214,7 +221,7 @@ func TestExecutor_BudgetRelease_CalledOncePerAllowedAttempt(t *testing.T) {
 	exec.sleep = func(context.Context, time.Duration) error { return nil }
 
 	calls := 0
-	_, _, err := DoValueWithTimeline[int](context.Background(), exec, key, func(context.Context) (int, error) {
+	_, err := DoValue[int](context.Background(), exec, key, func(context.Context) (int, error) {
 		calls++
 		if calls == 1 {
 			return 0, errors.New("nope")
@@ -241,7 +248,7 @@ func TestExecutor_AllowAttempt_ReleaseIsIdempotent(t *testing.T) {
 	budgets := budget.NewRegistry()
 	budgets.MustRegister("b", cb)
 
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Budgets: budgets,
 	})
 

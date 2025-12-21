@@ -85,10 +85,12 @@ func main() {
 When you need to know what happened, request a timeline:
 
 ```go
-user, tl, err := recourse.DoValueWithTimeline[User](ctx, "user-service.GetUser", op)
+ctx, capture := observe.RecordTimeline(ctx)
+user, err := recourse.DoValue(ctx, "user-service.GetUser", op)
 _ = user
 _ = err
 
+tl := capture.Timeline()
 for _, a := range tl.Attempts {
 	// a.Attempt, a.Outcome, a.BudgetAllowed, a.Backoff, a.Err, ...
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/aponysus/recourse/classify"
 	"github.com/aponysus/recourse/controlplane"
+	"github.com/aponysus/recourse/observe"
 	"github.com/aponysus/recourse/policy"
 )
 
@@ -28,7 +29,7 @@ func (e stubHTTPError) RetryAfter() (time.Duration, bool) { return e.retryAfter,
 
 func TestExecutor_MissingClassifier_Fallback_RecordsAttributes(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: {
@@ -48,10 +49,12 @@ func TestExecutor_MissingClassifier_Fallback_RecordsAttributes(t *testing.T) {
 	exec.sleep = func(context.Context, time.Duration) error { return nil }
 
 	calls := 0
-	_, tl, err := DoValueWithTimeline[int](context.Background(), exec, key, func(context.Context) (int, error) {
+	ctx, capture := observe.RecordTimeline(context.Background())
+	_, err := DoValue[int](ctx, exec, key, func(context.Context) (int, error) {
 		calls++
 		return 0, errors.New("nope")
 	})
+	tl := capture.Timeline()
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -76,7 +79,7 @@ func TestExecutor_MissingClassifier_Fallback_RecordsAttributes(t *testing.T) {
 
 func TestExecutor_MissingClassifier_Deny_FailsBeforeAttempts(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: {
@@ -91,10 +94,12 @@ func TestExecutor_MissingClassifier_Deny_FailsBeforeAttempts(t *testing.T) {
 		MissingClassifierMode: FailureDeny,
 	})
 
-	_, tl, err := DoValueWithTimeline[int](context.Background(), exec, key, func(context.Context) (int, error) {
+	ctx, capture := observe.RecordTimeline(context.Background())
+	_, err := DoValue[int](ctx, exec, key, func(context.Context) (int, error) {
 		t.Fatalf("op should not be called")
 		return 0, nil
 	})
+	tl := capture.Timeline()
 	if err == nil || !errors.Is(err, ErrNoClassifier) {
 		t.Fatalf("err=%v, want ErrNoClassifier", err)
 	}
@@ -111,7 +116,7 @@ func TestExecutor_MissingClassifier_Deny_FailsBeforeAttempts(t *testing.T) {
 
 func TestExecutor_HTTPClassifier_5xx_RetriesToMaxAttempts(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: {
@@ -128,10 +133,12 @@ func TestExecutor_HTTPClassifier_5xx_RetriesToMaxAttempts(t *testing.T) {
 	exec.sleep = func(context.Context, time.Duration) error { return nil }
 
 	calls := 0
-	_, tl, err := DoValueWithTimeline[int](context.Background(), exec, key, func(context.Context) (int, error) {
+	ctx, capture := observe.RecordTimeline(context.Background())
+	_, err := DoValue[int](ctx, exec, key, func(context.Context) (int, error) {
 		calls++
 		return 0, stubHTTPError{status: 500, method: "GET"}
 	})
+	tl := capture.Timeline()
 	if calls != 3 {
 		t.Fatalf("calls=%d, want 3", calls)
 	}
@@ -148,7 +155,7 @@ func TestExecutor_HTTPClassifier_5xx_RetriesToMaxAttempts(t *testing.T) {
 
 func TestExecutor_HTTPClassifier_404_StopsImmediately(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: {
@@ -189,7 +196,7 @@ func TestExecutor_AbortOutcome_DoesNotSleep(t *testing.T) {
 	classify.RegisterBuiltins(reg)
 	reg.Register("abort", abortClassifier{})
 
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Classifiers: reg,
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
@@ -229,7 +236,7 @@ func TestExecutor_AbortOutcome_DoesNotSleep(t *testing.T) {
 
 func TestExecutor_BackoffOverride_UsesRetryAfter(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: {

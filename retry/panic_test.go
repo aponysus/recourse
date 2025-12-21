@@ -19,7 +19,7 @@ func (panicProvider) GetEffectivePolicy(_ context.Context, _ policy.PolicyKey) (
 
 func TestExecutor_RecoverPanics_PolicyProvider(t *testing.T) {
 	key := policy.PolicyKey{Name: "panic-policy"}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider:          panicProvider{},
 		RecoverPanics:     true,
 		MissingPolicyMode: FailureDeny,
@@ -77,7 +77,7 @@ func TestExecutor_RecoverPanics_Classifier(t *testing.T) {
 	reg := classify.NewRegistry()
 	reg.Register("panic-cls", panicClassifier{})
 
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: {

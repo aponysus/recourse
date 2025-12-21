@@ -23,7 +23,10 @@ user, err := recourse.DoValue[User](
 When you need structured “what happened?” data:
 
 ```go
-user, tl, err := recourse.DoValueWithTimeline[User](ctx, "user-service.GetUser", op)
+```go
+ctx, capture := observe.RecordTimeline(ctx)
+user, err := recourse.DoValue(ctx, "user-service.GetUser", op)
+tl := capture.Timeline()
 _ = tl // inspect tl.Attempts, tl.FinalErr, tl.Attributes, ...
 ```
 

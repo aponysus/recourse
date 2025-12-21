@@ -19,7 +19,7 @@ func FuzzExecutor(f *testing.F) {
 		key := policy.PolicyKey{Name: polName}
 		// Create executor with minimal config
 		opts := ExecutorOptions{}
-		exec := NewExecutor(opts)
+		exec := NewExecutorFromOptions(opts)
 		exec.sleep = func(context.Context, time.Duration) error { return nil }
 
 		// Mock provider via simple logic if needed, or rely on static defaults?

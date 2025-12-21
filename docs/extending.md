@@ -63,16 +63,16 @@ Budgets are selected by policy (`Retry.Budget.Name`) and resolved via the execut
 budgets := budget.NewRegistry()
 budgets.Register("tb", budget.NewTokenBucketBudget(100, 50)) // capacity=100, refill=50 tokens/sec
 
-exec := retry.NewExecutor(retry.ExecutorOptions{
-	Provider: provider,
-	Budgets:  budgets,
-})
+exec := retry.NewExecutor(
+	retry.WithProvider(provider),
+	retry.WithBudgetRegistry(budgets),
+)
 
 // In policy:
 pol.Retry.Budget = policy.BudgetRef{Name: "tb", Cost: 1}
 ```
 
-By default, a missing budget name is fail-open (`MissingBudgetMode=retry.FailureAllow`) and records `"budget_not_found"` in the timeline; set `MissingBudgetMode=retry.FailureDeny` to fail-closed.
+By default, a missing budget name is fail-closed (`MissingBudgetMode=retry.FailureDeny`) and records `"budget_not_found"` in the timeline. Use `retry.WithMissingBudgetMode(retry.FailureAllowUnsafe)` to opt-in to fail-open.
 
 ## Writing a custom hedge trigger
 

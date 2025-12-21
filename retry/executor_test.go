@@ -11,7 +11,7 @@ import (
 )
 
 func TestExecutor_Do_Trivial(t *testing.T) {
-	exec := NewExecutor(ExecutorOptions{})
+	exec := NewExecutorFromOptions(ExecutorOptions{})
 	called := false
 	err := exec.Do(context.Background(), policy.PolicyKey{}, func(context.Context) error {
 		called = true
@@ -348,7 +348,7 @@ func TestExecutor_ContextCanceledDuringSleep(t *testing.T) {
 
 func TestExecutor_MissingPolicyMode_Allow(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider:          stubProvider{err: controlplane.ErrProviderUnavailable},
 		MissingPolicyMode: FailureAllow,
 	})
@@ -366,7 +366,7 @@ func TestExecutor_MissingPolicyMode_Allow(t *testing.T) {
 
 func TestExecutor_MissingPolicyMode_Deny(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider:          stubProvider{err: controlplane.ErrProviderUnavailable},
 		MissingPolicyMode: FailureDeny,
 	})
@@ -387,7 +387,7 @@ func TestExecutor_MissingPolicyMode_Deny(t *testing.T) {
 
 func TestExecutor_MissingPolicyMode_Fallback_PrefersReturnedPolicy(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: stubProvider{
 			pol: policy.EffectivePolicy{
 				Key: key,
@@ -414,7 +414,7 @@ func TestExecutor_MissingPolicyMode_Fallback_PrefersReturnedPolicy(t *testing.T)
 func newTestExecutor(t *testing.T, key policy.PolicyKey, pol policy.EffectivePolicy) *Executor {
 	t.Helper()
 
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: pol,

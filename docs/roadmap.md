@@ -13,6 +13,7 @@ Implemented today:
 - Outcome classifiers (`classify.Classifier`) selected by policy
 - Budgets/backpressure (per-attempt gating via `budget` + `ExecutorOptions.Budgets`)
 - Facade helpers that accept string keys (`recourse.Do*`)
+- API Ergonomics: Functional options for policies/executors and timeline capture context
 
 ## Planned phases (high level)
 

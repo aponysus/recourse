@@ -21,10 +21,13 @@ Keys must be **low-cardinality** (stable across requests). Good: `"payments.Char
 ## Getting a timeline
 
 ```go
-user, tl, err := recourse.DoValueWithTimeline[User](ctx, "user-service.GetUser", op)
-_ = user
-_ = err
+// Start timeline capture
+ctx, capture := observe.RecordTimeline(ctx)
 
+user, err := recourse.DoValue(ctx, "user-service.GetUser", op)
+
+// Access timeline (safe even after function returns)
+tl := capture.Timeline()
 for _, a := range tl.Attempts {
 	// inspect outcome, error, backoff, budget gating, timings
 }
@@ -40,25 +43,15 @@ key := policy.ParseKey("user-service.GetUser")
 budgets := budget.NewRegistry()
 budgets.Register("global", budget.NewTokenBucketBudget(100, 50)) // capacity=100, refill=50 tokens/sec
 
-exec := retry.NewExecutor(retry.ExecutorOptions{
-	Budgets: budgets,
-	Provider: &controlplane.StaticProvider{
-		Policies: map[policy.PolicyKey]policy.EffectivePolicy{
-			key: {
-				Key: key,
-				Retry: policy.RetryPolicy{
-					MaxAttempts:    3,
-					ClassifierName: classify.ClassifierHTTP,
-					Budget:         policy.BudgetRef{Name: "global", Cost: 1},
-				},
-			},
-		},
-	},
-})
+exec := retry.NewExecutor(
+	retry.WithBudgetRegistry(budgets),
+	retry.WithPolicy("user-service.GetUser",
+		policy.MaxAttempts(3),
+		policy.Classifier(classify.ClassifierHTTP),
+		policy.Budget("global"),
+	),
+)
 
-user, tl, err := retry.DoValueWithTimeline[User](ctx, exec, key, op)
-_ = user
-_ = tl
-_ = err
+user, err := retry.DoValue[User](ctx, exec, key, op)
 ```
 

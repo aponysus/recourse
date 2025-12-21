@@ -15,7 +15,7 @@ import (
 func TestDoValueWithTimeline_ObserverCallbacks_Success(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
 	obs := &testObserver{}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: {
@@ -32,13 +32,15 @@ func TestDoValueWithTimeline_ObserverCallbacks_Success(t *testing.T) {
 	exec.sleep = func(context.Context, time.Duration) error { return nil }
 
 	calls := 0
-	val, tl, err := DoValueWithTimeline[int](context.Background(), exec, key, func(ctx context.Context) (int, error) {
+	ctx, capture := observe.RecordTimeline(context.Background())
+	val, err := DoValue[int](ctx, exec, key, func(ctx context.Context) (int, error) {
 		calls++
 		if calls < 3 {
 			return 0, errors.New("nope")
 		}
 		return 42, nil
 	})
+	tl := capture.Timeline()
 	if err != nil {
 		t.Fatalf("err=%v, want nil", err)
 	}
@@ -87,7 +89,7 @@ func TestDoValueWithTimeline_ObserverCallbacks_Success(t *testing.T) {
 func TestDoValue_ObserverEnabled_CallsObserver(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
 	obs := &testObserver{}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: {
@@ -129,7 +131,7 @@ func TestDoValue_ObserverEnabled_CallsObserver(t *testing.T) {
 
 func TestDoValue_FastPath_AttemptInfoInContext(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: {
@@ -170,7 +172,7 @@ func TestExecutor_Observer_BudgetDecisions(t *testing.T) {
 	// We can redefine or reuse if in same package. Ideally verify reuse.
 	// Since tests in same package 'retry' share scope, it should work.
 
-	exec := NewExecutor(ExecutorOptions{
+	exec := NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: {
@@ -207,7 +209,7 @@ func TestExecutor_Observer_BudgetDecisions(t *testing.T) {
 	}
 
 	// Now try with denying budget
-	exec = NewExecutor(ExecutorOptions{
+	exec = NewExecutorFromOptions(ExecutorOptions{
 		Provider: &controlplane.StaticProvider{
 			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
 				key: {
