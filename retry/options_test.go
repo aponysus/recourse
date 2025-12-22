@@ -71,7 +71,7 @@ func TestNewExecutor_StaticPolicies_WithClassifierRegistry(t *testing.T) {
 	reg.Register("custom", classify.AlwaysRetryOnError{})
 
 	exec := NewExecutor(
-		WithClassifierRegistry(reg),
+		WithClassifiers(reg),
 		WithPolicy("test.reg", policy.Classifier("custom")),
 	)
 

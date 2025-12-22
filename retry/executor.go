@@ -7,170 +7,79 @@ import (
 	"math/rand"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aponysus/recourse/budget"
 	"github.com/aponysus/recourse/classify"
 	"github.com/aponysus/recourse/controlplane"
+	"github.com/aponysus/recourse/hedge"
 	"github.com/aponysus/recourse/observe"
 	"github.com/aponysus/recourse/policy"
 )
 
-type Operation func(ctx context.Context) error
+var (
+	// ErrNoPolicy is returned when no policy is found and missing policy mode is FailureDeny.
+	ErrNoPolicy = errors.New("recourse: no policy found")
 
-type OperationValue[T any] func(ctx context.Context) (T, error)
+	// errHedgingRequiresTimeline is an internal sentinel used to switch from fast path to strict path.
+	errHedgingRequiresTimeline = errors.New("recourse: hedging requires timeline")
 
+	defaultExecutor     *Executor
+	defaultExecutorOnce sync.Once
+)
+
+// DefaultExecutor returns the global default executor.
+func DefaultExecutor() *Executor {
+	defaultExecutorOnce.Do(func() {
+		defaultExecutor = NewExecutor()
+	})
+	return defaultExecutor
+}
+
+// FailureMode controls behavior when a dependency is missing.
 type FailureMode int
 
 const (
-	FailureFallback    FailureMode = iota // use safe defaults
-	FailureAllow                          // proceed without constraint
-	FailureDeny                           // fail fast
-	FailureAllowUnsafe                    // proceed without constraint (explicit unsafe opt-in)
+	FailureModeUnknown FailureMode = iota
+	FailureDeny
+	FailureAllow
+	FailureFallback
+	FailureAllowUnsafe
 )
 
-// ErrNoPolicy is returned when MissingPolicyMode=FailureDeny and the executor
-// cannot obtain an authoritative policy.
-var ErrNoPolicy = errors.New("recourse: no policy")
-
-type NoPolicyError struct {
-	Key policy.PolicyKey
-	Err error
-}
-
-func (e *NoPolicyError) Error() string {
-	if e == nil {
-		return "<nil>"
+func failureModeString(mode FailureMode) string {
+	switch mode {
+	case FailureDeny:
+		return "deny"
+	case FailureAllow:
+		return "allow"
+	case FailureFallback:
+		return "fallback"
+	case FailureAllowUnsafe:
+		return "allow_unsafe"
+	default:
+		return "unknown"
 	}
-	if e.Err == nil {
-		return ErrNoPolicy.Error()
-	}
-	return ErrNoPolicy.Error() + ": " + e.Err.Error()
 }
 
-func (e *NoPolicyError) Unwrap() error { return e.Err }
-
-func (e *NoPolicyError) Is(target error) bool { return target == ErrNoPolicy }
-
-// ErrNoClassifier is returned when MissingClassifierMode=FailureDeny and the executor
-// cannot resolve the requested classifier by name.
-var ErrNoClassifier = errors.New("recourse: classifier not found")
-
-type NoClassifierError struct {
-	Name string
-}
-
-func (e *NoClassifierError) Error() string {
-	if e == nil {
-		return "<nil>"
-	}
-	if strings.TrimSpace(e.Name) == "" {
-		return ErrNoClassifier.Error()
-	}
-	return ErrNoClassifier.Error() + ": " + e.Name
-}
-
-func (e *NoClassifierError) Is(target error) bool { return target == ErrNoClassifier }
-
-type PanicError struct {
-	Component string
-	Key       policy.PolicyKey
-	Value     any
-	Stack     []byte
-}
-
-func (e *PanicError) Error() string {
-	msg := "recourse: panic in " + e.Component
-	if e.Value != nil {
-		msg += fmt.Sprintf(": %v", e.Value)
-	}
-	return msg
-}
-
-type ExecutorOptions struct {
-	Provider controlplane.PolicyProvider
-	Observer observe.Observer // nil → NoopObserver
-	Clock    func() time.Time // for tests
-
-	Classifiers       *classify.Registry
-	DefaultClassifier classify.Classifier
-
-	Budgets *budget.Registry
-
-	// Failure modes for missing components (used in later phases).
-	MissingPolicyMode     FailureMode // default: FailureFallback
-	MissingClassifierMode FailureMode // default: FailureFallback (Phase 3+)
-	MissingBudgetMode     FailureMode // default: FailureDeny (fail-closed)
-	MissingTriggerMode    FailureMode // default: FailureFallback/disable hedging (Phase 5+)
-
-	// Panic isolation for user hooks (Phase 3+).
-	RecoverPanics bool // default false
-}
+type Operation func(ctx context.Context) error
+type OperationValue[T any] func(ctx context.Context) (T, error)
 
 type Executor struct {
-	provider controlplane.PolicyProvider
-	observer observe.Observer
-	clock    func() time.Time
-
-	classifiers       *classify.Registry
-	defaultClassifier classify.Classifier
-	budgets           *budget.Registry
-
+	provider              controlplane.PolicyProvider
+	observer              observe.Observer
+	clock                 func() time.Time
+	sleep                 func(context.Context, time.Duration) error
+	classifiers           *classify.Registry
+	defaultClassifier     classify.Classifier
+	budgets               *budget.Registry
+	triggers              *hedge.Registry
 	missingPolicyMode     FailureMode
 	missingClassifierMode FailureMode
 	missingBudgetMode     FailureMode
 	missingTriggerMode    FailureMode
-
-	recoverPanics bool
-
-	sleep func(ctx context.Context, d time.Duration) error
-}
-
-// NewExecutorFromOptions creates an Executor using a configuration struct.
-// This is useful for configuration-file driven setups or legacy code.
-func NewExecutorFromOptions(opts ExecutorOptions) *Executor {
-	exec := &Executor{
-		provider:          opts.Provider,
-		observer:          opts.Observer,
-		clock:             opts.Clock,
-		classifiers:       opts.Classifiers,
-		defaultClassifier: opts.DefaultClassifier,
-		budgets:           opts.Budgets,
-		recoverPanics:     opts.RecoverPanics,
-
-		missingPolicyMode:     normalizeFailureMode(opts.MissingPolicyMode, FailureFallback),
-		missingClassifierMode: normalizeFailureMode(opts.MissingClassifierMode, FailureFallback),
-		missingBudgetMode:     normalizeFailureMode(opts.MissingBudgetMode, FailureDeny),
-		missingTriggerMode:    normalizeFailureMode(opts.MissingTriggerMode, FailureFallback),
-
-		sleep: sleepWithContext,
-	}
-
-	if exec.provider == nil {
-		exec.provider = &controlplane.StaticProvider{}
-	}
-	if exec.observer == nil {
-		exec.observer = observe.NoopObserver{}
-	}
-	if exec.classifiers == nil {
-		exec.classifiers = classify.NewRegistry()
-		classify.RegisterBuiltins(exec.classifiers)
-	}
-	if exec.defaultClassifier == nil {
-		exec.defaultClassifier = classify.AlwaysRetryOnError{}
-	}
-	if exec.clock == nil {
-		exec.clock = time.Now
-	}
-	return exec
-}
-
-// Global default executor (used by DefaultExecutor())
-var defaultExecutor = NewExecutor()
-
-// DefaultExecutor returns a shared, default-configured executor.
-func DefaultExecutor() *Executor {
-	return defaultExecutor
+	recoverPanics         bool
 }
 
 type executorConfig struct {
@@ -178,22 +87,29 @@ type executorConfig struct {
 	staticPolicies map[policy.PolicyKey]policy.EffectivePolicy
 }
 
-// ExecutorOption configures an Executor.
-type ExecutorOption func(*executorConfig)
+// ExecutorOptions configures an Executor.
+type ExecutorOptions struct {
+	Provider              controlplane.PolicyProvider
+	Observer              observe.Observer
+	Clock                 func() time.Time
+	Classifiers           *classify.Registry
+	DefaultClassifier     classify.Classifier
+	Budgets               *budget.Registry
+	Triggers              *hedge.Registry
+	MissingPolicyMode     FailureMode
+	MissingClassifierMode FailureMode
+	MissingBudgetMode     FailureMode
+	MissingTriggerMode    FailureMode
+	RecoverPanics         bool
+}
 
-// NewExecutor creates an Executor with the given options.
+// NewExecutor creates an Executor with default options.
 func NewExecutor(opts ...ExecutorOption) *Executor {
 	cfg := &executorConfig{}
 
 	for _, opt := range opts {
 		opt(cfg)
 	}
-
-	// If static policies were provided but no provider, make a StaticProvider.
-	// If a provider was explicitly set, static policies are ignored (or we could try to merge/error,
-	// but the plan says "Explicit provider: caller supplies ... Static provider builder: caller supplies policies").
-	// Implementation thought: if provider IS nil, and static policies exist, use StaticProvider.
-	// If provider exists, use it.
 
 	if cfg.opts.Provider == nil && len(cfg.staticPolicies) > 0 {
 		cfg.opts.Provider = &controlplane.StaticProvider{
@@ -203,6 +119,86 @@ func NewExecutor(opts ...ExecutorOption) *Executor {
 
 	return NewExecutorFromOptions(cfg.opts)
 }
+
+// NewExecutorFromOptions creates an Executor from a config struct.
+func NewExecutorFromOptions(opts ExecutorOptions) *Executor {
+	e := &Executor{
+		provider:              opts.Provider,
+		observer:              opts.Observer,
+		clock:                 opts.Clock,
+		classifiers:           opts.Classifiers,
+		defaultClassifier:     opts.DefaultClassifier,
+		budgets:               opts.Budgets,
+		triggers:              opts.Triggers,
+		missingPolicyMode:     normalizeFailureMode(opts.MissingPolicyMode, FailureDeny),
+		missingClassifierMode: normalizeFailureMode(opts.MissingClassifierMode, FailureFallback),
+		missingBudgetMode:     normalizeFailureMode(opts.MissingBudgetMode, FailureDeny),
+		missingTriggerMode:    normalizeFailureMode(opts.MissingTriggerMode, FailureFallback),
+		recoverPanics:         opts.RecoverPanics,
+	}
+
+	if e.provider == nil {
+		e.provider = &controlplane.StaticProvider{}
+	}
+	if e.observer == nil {
+		e.observer = &observe.NoopObserver{}
+	}
+	if e.clock == nil {
+		e.clock = time.Now
+	}
+	if e.sleep == nil {
+		e.sleep = sleepWithContext
+	}
+	if e.classifiers == nil {
+		e.classifiers = classify.NewRegistry()
+		classify.RegisterBuiltins(e.classifiers)
+	}
+	if e.defaultClassifier == nil {
+		e.defaultClassifier = classify.AlwaysRetryOnError{}
+	}
+
+	return e
+}
+
+// Validator for PanicError etc.
+type PanicError struct {
+	Component string
+	Key       policy.PolicyKey
+	Value     any
+	Stack     []byte
+}
+
+func (e *PanicError) Error() string {
+	return fmt.Sprintf("recourse: panic in %s for %s: %v", e.Component, e.Key, e.Value)
+}
+
+type NoPolicyError struct {
+	Key policy.PolicyKey
+	Err error
+}
+
+func (e *NoPolicyError) Error() string {
+	return fmt.Sprintf("recourse: policy not found for %s: %v", e.Key, e.Err)
+}
+
+func (e *NoPolicyError) Unwrap() error {
+	return e.Err
+}
+
+func (e *NoPolicyError) Is(target error) bool {
+	return target == ErrNoPolicy
+}
+
+type NoClassifierError struct {
+	Name string
+}
+
+func (e *NoClassifierError) Error() string {
+	return fmt.Sprintf("recourse: classifier not found: %s", e.Name)
+}
+
+// ExecutorOption configures an Executor.
+type ExecutorOption func(*executorConfig)
 
 // WithProvider sets the policy provider.
 func WithProvider(p controlplane.PolicyProvider) ExecutorOption {
@@ -218,15 +214,15 @@ func WithObserver(o observe.Observer) ExecutorOption {
 	}
 }
 
-// WithClock sets the clock function (for testing).
-func WithClock(clock func() time.Time) ExecutorOption {
+// WithClock sets the clock function.
+func WithClock(f func() time.Time) ExecutorOption {
 	return func(c *executorConfig) {
-		c.opts.Clock = clock
+		c.opts.Clock = f
 	}
 }
 
-// WithClassifierRegistry sets the classifier registry.
-func WithClassifierRegistry(r *classify.Registry) ExecutorOption {
+// WithClassifiers sets the classifier registry.
+func WithClassifiers(r *classify.Registry) ExecutorOption {
 	return func(c *executorConfig) {
 		c.opts.Classifiers = r
 	}
@@ -243,6 +239,13 @@ func WithDefaultClassifier(cls classify.Classifier) ExecutorOption {
 func WithBudgetRegistry(r *budget.Registry) ExecutorOption {
 	return func(c *executorConfig) {
 		c.opts.Budgets = r
+	}
+}
+
+// WithHedgeTriggerRegistry sets the hedge trigger registry.
+func WithHedgeTriggerRegistry(r *hedge.Registry) ExecutorOption {
+	return func(c *executorConfig) {
+		c.opts.Triggers = r
 	}
 }
 
@@ -332,6 +335,7 @@ func doValueInternal[T any](ctx context.Context, exec *Executor, key policy.Poli
 			Classifiers:           exec.classifiers,
 			DefaultClassifier:     exec.defaultClassifier,
 			Budgets:               exec.budgets,
+			Triggers:              exec.triggers,
 			MissingPolicyMode:     exec.missingPolicyMode,
 			MissingBudgetMode:     exec.missingBudgetMode,
 			MissingClassifierMode: exec.missingClassifierMode,
@@ -344,18 +348,23 @@ func doValueInternal[T any](ctx context.Context, exec *Executor, key policy.Poli
 	fullTimeline := wantTimeline || hasCapture || !isNoopObserver(exec.observer)
 
 	if !fullTimeline {
-		// Even in fast path, we must ensure nested calls don't accidentally capture.
-		// Use a wrapped op that suppresses capture.
+		// Use a wrapped op that suppresses capture to prevent implicit capture in nested calls.
 		fastOp := func(c context.Context) (T, error) {
 			return op(observe.WithoutTimelineCapture(c))
 		}
 		val, err := doValueFast(ctx, exec, key, fastOp)
-		return val, observe.Timeline{}, err
+
+		// Fallback check
+		if err == errHedgingRequiresTimeline {
+			// Fall through to fullTimeline path
+			fullTimeline = true
+		} else {
+			return val, observe.Timeline{}, err
+		}
 	}
 
-	// For full timeline, we also want to suppress capture in the op, but doValueWithTimeline
-	// handles constructing the attempt context, so strictly speaking we can wrap here or there.
-	// Wrapping here is consistent.
+	// For full timeline, we also suppress capture in the op.
+	// Wrapping here provides consistency with the fast path.
 	safeOp := func(c context.Context) (T, error) {
 		return op(observe.WithoutTimelineCapture(c))
 	}
@@ -375,6 +384,10 @@ func doValueFast[T any](ctx context.Context, exec *Executor, key policy.PolicyKe
 		return zero, err
 	}
 
+	if pol.Hedge.Enabled {
+		return zero, errHedgingRequiresTimeline
+	}
+
 	classifier, _, err := resolveClassifier(exec, pol)
 	if err != nil {
 		return zero, err
@@ -386,11 +399,12 @@ func doValueFast[T any](ctx context.Context, exec *Executor, key policy.PolicyKe
 		defer cancel()
 	}
 
-	backoff := pol.Retry.InitialBackoff
 	maxAttempts := pol.Retry.MaxAttempts
 	if maxAttempts <= 0 {
 		maxAttempts = 1
 	}
+
+	backoff := pol.Retry.InitialBackoff
 
 	var last T
 	var lastErr error
@@ -401,11 +415,9 @@ func doValueFast[T any](ctx context.Context, exec *Executor, key policy.PolicyKe
 		}
 
 		decision, ok := exec.allowAttempt(ctx, key, pol.Retry.Budget, attempt, budget.KindRetry)
+		// Check if attempt is allowed by budget.
 		if !ok {
-			if attempt == 0 {
-				return zero, terminalError(ctx, nil, classify.Outcome{Kind: classify.OutcomeAbort, Reason: decision.Reason})
-			}
-			return last, lastErr
+			return last, errors.New(decision.Reason)
 		}
 
 		release := decision.Release
@@ -415,16 +427,18 @@ func doValueFast[T any](ctx context.Context, exec *Executor, key policy.PolicyKe
 		if pol.Retry.TimeoutPerAttempt > 0 {
 			attemptCtx, cancelAttempt = context.WithTimeout(ctx, pol.Retry.TimeoutPerAttempt)
 		}
+
+		// Inject attempt info for observability.
 		attemptCtx = observe.WithAttemptInfo(attemptCtx, observe.AttemptInfo{
 			RetryIndex: attempt,
 			Attempt:    attempt,
 			IsHedge:    false,
-			HedgeIndex: 0,
 			PolicyID:   pol.ID,
 		})
 
 		var val T
 		var err error
+
 		func() {
 			defer cancelAttempt()
 			if release != nil {
@@ -438,8 +452,9 @@ func doValueFast[T any](ctx context.Context, exec *Executor, key policy.PolicyKe
 
 		out, panicErr := classifyWithRecovery(exec.recoverPanics, classifier, val, err, key)
 		if panicErr != nil {
-			return last, terminalError(ctx, panicErr, out)
+			return last, panicErr
 		}
+
 		if out.Kind == classify.OutcomeSuccess {
 			return val, nil
 		}
@@ -448,10 +463,11 @@ func doValueFast[T any](ctx context.Context, exec *Executor, key policy.PolicyKe
 		case classify.OutcomeRetryable:
 			// continue
 		case classify.OutcomeNonRetryable, classify.OutcomeAbort, classify.OutcomeUnknown:
-			return last, terminalError(ctx, err, out)
+			return last, terminalError(ctx, lastErr, out)
 		default:
-			return last, terminalError(ctx, err, classify.Outcome{Kind: classify.OutcomeAbort, Reason: "unknown_outcome"})
+			return last, terminalError(ctx, lastErr, out)
 		}
+
 		if attempt == maxAttempts-1 {
 			return last, terminalError(ctx, lastErr, out)
 		}
@@ -536,6 +552,14 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 	var lastErr error
 	var lastBackoff time.Duration
 
+	var tlMu sync.Mutex
+	recordAttempt := func(ctx context.Context, rec observe.AttemptRecord) {
+		tlMu.Lock()
+		defer tlMu.Unlock()
+		tl.Attempts = append(tl.Attempts, rec)
+		exec.observer.OnAttempt(ctx, key, rec)
+	}
+
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
 			tl.End = exec.clock()
@@ -544,114 +568,41 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 			return last, tl, err
 		}
 
-		attemptStart := exec.clock()
+		opAny := func(c context.Context) (any, error) { return op(c) }
 
-		decision, ok := exec.allowAttempt(ctx, key, pol.Retry.Budget, attempt, budget.KindRetry)
-		if !ok {
-			attemptCtx := observe.WithAttemptInfo(ctx, observe.AttemptInfo{
-				RetryIndex: attempt,
-				Attempt:    attempt,
-				IsHedge:    false,
-				HedgeIndex: 0,
-				PolicyID:   pol.ID,
-			})
+		valAny, err, outcome, success := exec.doRetryGroup(
+			ctx,
+			key,
+			opAny,
+			pol,
+			attempt,
+			classifier,
+			cmeta,
+			lastBackoff,
+			recordAttempt,
+		)
 
-			outcome := classify.Outcome{Kind: classify.OutcomeAbort, Reason: decision.Reason}
-			rec := observe.AttemptRecord{
-				Attempt:       attempt,
-				StartTime:     attemptStart,
-				EndTime:       exec.clock(),
-				Outcome:       outcome,
-				Err:           nil,
-				Backoff:       lastBackoff,
-				BudgetAllowed: false,
-				BudgetReason:  decision.Reason,
-			}
-			tl.Attempts = append(tl.Attempts, rec)
-			exec.observer.OnAttempt(attemptCtx, key, rec)
-
-			terr := terminalError(ctx, nil, outcome)
-			if attempt > 0 && lastErr != nil {
-				terr = lastErr
-			}
-			tl.End = exec.clock()
-			tl.FinalErr = terr
-			exec.observer.OnFailure(ctx, key, tl)
-			return last, tl, terr
-		}
-
-		release := decision.Release
-
-		attemptCtx := ctx
-		cancelAttempt := func() {}
-		if pol.Retry.TimeoutPerAttempt > 0 {
-			attemptCtx, cancelAttempt = context.WithTimeout(ctx, pol.Retry.TimeoutPerAttempt)
-		}
-		attemptCtx = observe.WithAttemptInfo(attemptCtx, observe.AttemptInfo{
-			RetryIndex: attempt,
-			Attempt:    attempt,
-			IsHedge:    false,
-			HedgeIndex: 0,
-			PolicyID:   pol.ID,
-		})
-
-		var val T
-		var err error
-		func() {
-			defer cancelAttempt()
-			if release != nil {
-				defer release()
-			}
-			val, err = op(attemptCtx)
-		}()
-
-		attemptEnd := exec.clock()
-
-		last = val
-		lastErr = err
-
-		outcome, panicErr := classifyWithRecovery(exec.recoverPanics, classifier, val, err, key)
-		annotateClassifierFallback(&outcome, cmeta)
-
-		rec := observe.AttemptRecord{
-			Attempt:       attempt,
-			StartTime:     attemptStart,
-			EndTime:       attemptEnd,
-			Outcome:       outcome,
-			Err:           err,
-			Backoff:       lastBackoff,
-			BudgetAllowed: decision.Allowed,
-			BudgetReason:  decision.Reason,
-		}
-		tl.Attempts = append(tl.Attempts, rec)
-		exec.observer.OnAttempt(attemptCtx, key, rec)
-
-		if panicErr != nil {
-			terr := terminalError(ctx, panicErr, outcome)
-			tl.End = exec.clock()
-			tl.FinalErr = terr
-			exec.observer.OnFailure(ctx, key, tl)
-			return last, tl, terr
-		}
-
-		if outcome.Kind == classify.OutcomeSuccess {
+		if success {
 			tl.End = exec.clock()
 			tl.FinalErr = nil
 			exec.observer.OnSuccess(ctx, key, tl)
-			return val, tl, nil
+			return valAny.(T), tl, nil
 		}
 
-		switch outcome.Kind {
-		case classify.OutcomeRetryable:
-			// continue
-		case classify.OutcomeNonRetryable, classify.OutcomeAbort, classify.OutcomeUnknown:
-			terr := terminalError(ctx, err, outcome)
-			tl.End = exec.clock()
-			tl.FinalErr = terr
-			exec.observer.OnFailure(ctx, key, tl)
-			return last, tl, terr
-		default:
-			terr := terminalError(ctx, err, classify.Outcome{Kind: classify.OutcomeAbort, Reason: "unknown_outcome"})
+		prevErr := lastErr
+		lastErr = err
+
+		isTerminal := false
+		if outcome.Kind == classify.OutcomeAbort || outcome.Kind == classify.OutcomeNonRetryable {
+			isTerminal = true
+		}
+
+		if isTerminal {
+			terr := terminalError(ctx, lastErr, outcome)
+			if attempt > 0 && prevErr != nil && outcome.Reason == "budget_denied" {
+				terr = prevErr
+			}
+
 			tl.End = exec.clock()
 			tl.FinalErr = terr
 			exec.observer.OnFailure(ctx, key, tl)
@@ -708,21 +659,9 @@ func resolvePolicyWithAttributes(ctx context.Context, exec *Executor, key policy
 	}()
 
 	if err != nil {
-		attrs["policy_error"] = policyErrorKind(err)
-		attrs["missing_policy_mode"] = failureModeString(exec.missingPolicyMode)
-
 		switch exec.missingPolicyMode {
 		case FailureDeny:
-			if isZeroEffectivePolicy(pol) {
-				pol = policy.EffectivePolicy{Key: key}
-			} else {
-				pol.Key = key
-			}
-			// If it's a PanicError, wrapping it in NoPolicyError might hide it?
-			// NoPolicyError wraps the error, so Is(ErrNoPolicy) works.
-			// But maybe we want the panic to surface more loudly?
-			// The contract says ResolvePolicy returns error if failed.
-			return pol, attrs, &NoPolicyError{Key: key, Err: err}
+			return policy.EffectivePolicy{}, attrs, &NoPolicyError{Key: key, Err: err}
 		case FailureAllow:
 			pol = policy.EffectivePolicy{Key: key, Retry: policy.RetryPolicy{MaxAttempts: 1}}
 		case FailureFallback:
@@ -736,14 +675,11 @@ func resolvePolicyWithAttributes(ctx context.Context, exec *Executor, key policy
 	}
 	pol.Key = key
 
-	var normErr error
-	pol, normErr = pol.Normalize()
+	pol, normErr := pol.Normalize()
 	if normErr != nil {
-		attrs["policy_error"] = "policy_normalize_error"
-		attrs["missing_policy_mode"] = failureModeString(exec.missingPolicyMode)
 		switch exec.missingPolicyMode {
 		case FailureDeny:
-			return pol, attrs, &NoPolicyError{Key: key, Err: normErr}
+			return policy.EffectivePolicy{}, attrs, &NoPolicyError{Key: key, Err: normErr}
 		case FailureAllow:
 			pol = policy.EffectivePolicy{Key: key, Retry: policy.RetryPolicy{MaxAttempts: 1}}
 			pol, _ = pol.Normalize()
@@ -751,37 +687,16 @@ func resolvePolicyWithAttributes(ctx context.Context, exec *Executor, key policy
 			pol = policy.DefaultPolicyFor(key)
 			pol, _ = pol.Normalize()
 		}
-	}
-
-	if pol.Meta.Source != "" {
-		attrs["policy_source"] = string(pol.Meta.Source)
-	}
-	if pol.Meta.Normalization.Changed {
-		attrs["policy_normalized"] = "true"
-		if len(pol.Meta.Normalization.ChangedFields) > 0 {
-			attrs["policy_clamped_fields"] = strings.Join(pol.Meta.Normalization.ChangedFields, ",")
-		}
+		attrs["policy_error"] = fmt.Sprintf("normalization_failed: %v", normErr)
 	}
 
 	return pol, attrs, nil
 }
 
-func failureModeString(mode FailureMode) string {
-	switch mode {
-	case FailureFallback:
-		return "fallback"
-	case FailureAllow:
-		return "allow"
-	case FailureDeny:
-		return "deny"
-	case FailureAllowUnsafe:
-		return "allow_unsafe"
-	default:
-		return "unknown"
-	}
-}
-
 func resolvePolicyFast(ctx context.Context, exec *Executor, key policy.PolicyKey) (policy.EffectivePolicy, error) {
+	// Fast path avoids attributes map and defer overhead if possible.
+	// But provider might panic.
+
 	var pol policy.EffectivePolicy
 	var err error
 
@@ -947,17 +862,7 @@ func resolveClassifier(exec *Executor, pol policy.EffectivePolicy) (classify.Cla
 	}()
 
 	if panicErr != nil {
-		// Treat panic as not found or error?
-		// If registry panics, we probably can't get the classifier.
-		// We treat it as an error resolving classifier.
-		// If missingClassifierMode is Deny, we return error.
-		// If Fallback, we use default.
-
-		// Let's use the missingClassifierMode logic but with the panic error.
 		meta.notFound = true
-		// Actually panic in registry is distinct from "not found".
-		// But for resilience, falling back is good if configured.
-
 		switch exec.missingClassifierMode {
 		case FailureDeny:
 			return nil, meta, panicErr

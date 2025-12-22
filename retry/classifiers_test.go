@@ -100,8 +100,9 @@ func TestExecutor_MissingClassifier_Deny_FailsBeforeAttempts(t *testing.T) {
 		return 0, nil
 	})
 	tl := capture.Timeline()
-	if err == nil || !errors.Is(err, ErrNoClassifier) {
-		t.Fatalf("err=%v, want ErrNoClassifier", err)
+	var nce *NoClassifierError
+	if err == nil || !errors.As(err, &nce) {
+		t.Fatalf("err=%v, want NoClassifierError", err)
 	}
 	if len(tl.Attempts) != 0 {
 		t.Fatalf("attempts=%d, want 0", len(tl.Attempts))
