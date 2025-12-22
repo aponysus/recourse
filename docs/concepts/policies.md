@@ -4,10 +4,11 @@ Execution is driven by `policy.EffectivePolicy`, resolved by a `controlplane.Pol
 
 ## Effective policy
 
-Policies are per-key and have (today) two main sub-policies:
+Policies are per-key and have (today) three main sub-policies:
 
-- `Retry`: bounded attempts/backoff/timeouts + classifier/budget references
-- `Hedge`: present in schema but hedging is not implemented yet
+- `Retry`: Bounded attempts, backoff, jitter, timeouts, and budget references.
+- `Hedge`: Parallel attempt execution (Fixed-Delay or Latency-Aware). See [Hedging](hedging.md).
+- `Circuit`: Short-circuiting logic for failing dependencies. See [Circuit Breaking](circuit-breaking.md).
 
 All policies are normalized/clamped via `EffectivePolicy.Normalize()` to prevent unsafe configs (busy loops, tiny timeouts, unbounded concurrency).
 

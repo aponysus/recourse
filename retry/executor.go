@@ -645,9 +645,13 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 	var lastBackoff time.Duration
 
 	var tlMu sync.Mutex
+	var done bool
 	recordAttempt := func(ctx context.Context, rec observe.AttemptRecord) {
 		tlMu.Lock()
 		defer tlMu.Unlock()
+		if done {
+			return
+		}
 		tl.Attempts = append(tl.Attempts, rec)
 		exec.observer.OnAttempt(ctx, key, rec)
 
@@ -658,8 +662,11 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if err := ctx.Err(); err != nil {
+			tlMu.Lock()
+			done = true
 			tl.End = exec.clock()
 			tl.FinalErr = err
+			tlMu.Unlock()
 			exec.observer.OnFailure(ctx, key, tl)
 			// Context canceled before attempt.
 			// Should we report this to breaker?
@@ -687,8 +694,11 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 				cb.RecordSuccess(ctx)
 			}
 
+			tlMu.Lock()
+			done = true
 			tl.End = exec.clock()
 			tl.FinalErr = nil
+			tlMu.Unlock()
 			exec.observer.OnSuccess(ctx, key, tl)
 			return valAny.(T), tl, nil
 		}
@@ -712,8 +722,11 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 				terr = prevErr
 			}
 
+			tlMu.Lock()
+			done = true
 			tl.End = exec.clock()
 			tl.FinalErr = terr
+			tlMu.Unlock()
 			exec.observer.OnFailure(ctx, key, tl)
 
 			return last, tl, terr
@@ -725,8 +738,11 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 			}
 
 			terr := terminalError(ctx, lastErr, outcome)
+			tlMu.Lock()
+			done = true
 			tl.End = exec.clock()
 			tl.FinalErr = terr
+			tlMu.Unlock()
 			exec.observer.OnFailure(ctx, key, tl)
 			return last, tl, terr
 		}
@@ -735,8 +751,11 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 		lastBackoff = sleepFor
 		if sleepFor > 0 {
 			if err := exec.sleep(ctx, sleepFor); err != nil {
+				tlMu.Lock()
+				done = true
 				tl.End = exec.clock()
 				tl.FinalErr = err
+				tlMu.Unlock()
 				exec.observer.OnFailure(ctx, key, tl)
 				return last, tl, err
 			}
@@ -745,8 +764,11 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 		backoff = nextBackoff(backoff, pol.Retry.BackoffMultiplier, pol.Retry.MaxBackoff)
 	}
 
+	tlMu.Lock()
+	done = true
 	tl.End = exec.clock()
 	tl.FinalErr = lastErr
+	tlMu.Unlock()
 	exec.observer.OnFailure(ctx, key, tl)
 	return last, tl, lastErr
 }
