@@ -8,16 +8,17 @@ type FixedDelayTrigger struct {
 }
 
 func (t FixedDelayTrigger) ShouldSpawnHedge(state HedgeState) (bool, time.Duration) {
-	// If we haven't reached the delay yet, wait until we do.
-	if state.Elapsed < t.Delay {
-		return false, t.Delay - state.Elapsed
+	// We stop if we've reached the maximum number of attempts (Primary + MaxHedges).
+	if state.AttemptsLaunched >= 1+state.MaxHedges {
+		return false, 0
 	}
 
-	// FixedDelay spawns a single hedge after the specified delay.
-	// If we've already launched more than 1 attempt (primary), we stop.
-
-	if state.AttemptsLaunched > 1 {
-		return false, 0 // No more hedges from this trigger
+	// For multiple hedges, we space them out by the delay.
+	// Primary (1) -> Wait Delay -> Hedge 1 (2) -> Wait Delay -> Hedge 2 (3) ...
+	// Target elapsed time for the *next* hedge is Delay * AttemptsLaunched.
+	target := t.Delay * time.Duration(state.AttemptsLaunched)
+	if state.Elapsed < target {
+		return false, target - state.Elapsed
 	}
 
 	return true, 0

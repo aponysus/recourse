@@ -15,6 +15,8 @@ type HedgeState struct {
 	MaxHedges int
 	// Elapsed is the time elapsed since AttemptStart.
 	Elapsed time.Duration
+	// Snapshot contains the current latency statistics for the operation.
+	Snapshot LatencySnapshot
 }
 
 // Trigger decides when to spawn a hedged attempt.

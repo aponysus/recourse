@@ -80,6 +80,9 @@ type Executor struct {
 	missingBudgetMode     FailureMode
 	missingTriggerMode    FailureMode
 	recoverPanics         bool
+
+	trackerMu sync.RWMutex
+	trackers  map[policy.PolicyKey]hedge.LatencyTracker
 }
 
 type executorConfig struct {
@@ -135,6 +138,7 @@ func NewExecutorFromOptions(opts ExecutorOptions) *Executor {
 		missingBudgetMode:     normalizeFailureMode(opts.MissingBudgetMode, FailureDeny),
 		missingTriggerMode:    normalizeFailureMode(opts.MissingTriggerMode, FailureFallback),
 		recoverPanics:         opts.RecoverPanics,
+		trackers:              make(map[policy.PolicyKey]hedge.LatencyTracker),
 	}
 
 	if e.provider == nil {
@@ -373,7 +377,27 @@ func doValueInternal[T any](ctx context.Context, exec *Executor, key policy.Poli
 	if capture != nil {
 		observe.StoreTimelineCapture(capture, &tl)
 	}
+	// Record latency if we have a valid policy key and tracking is enabled.
 	return val, tl, err
+}
+
+func (e *Executor) getTracker(key policy.PolicyKey) hedge.LatencyTracker {
+	e.trackerMu.RLock()
+	t, ok := e.trackers[key]
+	e.trackerMu.RUnlock()
+	if ok {
+		return t
+	}
+
+	e.trackerMu.Lock()
+	defer e.trackerMu.Unlock()
+	// Double check
+	if t, ok = e.trackers[key]; ok {
+		return t
+	}
+	t = hedge.NewRingBufferTracker(256)
+	e.trackers[key] = t
+	return t
 }
 
 func doValueFast[T any](ctx context.Context, exec *Executor, key policy.PolicyKey, op OperationValue[T]) (T, error) {
@@ -444,7 +468,10 @@ func doValueFast[T any](ctx context.Context, exec *Executor, key policy.PolicyKe
 			if release != nil {
 				defer release()
 			}
+			start := exec.clock()
 			val, err = op(attemptCtx)
+			// Feed latency tracker
+			exec.getTracker(key).Observe(exec.clock().Sub(start))
 		}()
 
 		last = val
@@ -558,6 +585,10 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 		defer tlMu.Unlock()
 		tl.Attempts = append(tl.Attempts, rec)
 		exec.observer.OnAttempt(ctx, key, rec)
+
+		// Feed latency tracker
+		tracker := exec.getTracker(key)
+		tracker.Observe(rec.EndTime.Sub(rec.StartTime))
 	}
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
@@ -606,6 +637,7 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 			tl.End = exec.clock()
 			tl.FinalErr = terr
 			exec.observer.OnFailure(ctx, key, tl)
+
 			return last, tl, terr
 		}
 		if attempt == maxAttempts-1 {

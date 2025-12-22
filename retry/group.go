@@ -95,10 +95,9 @@ func (e *Executor) doRetryGroup(
 					rec.Backoff = 0 // Hedges don't strictly have "backoff" from previous retry
 				}
 
-				// Record denial and report failure.
 				recordAttempt(groupCtx, rec)
 				results <- groupResult[any]{
-					err:     errors.New(decision.Reason), // Sentinel?
+					err:     errors.New(decision.Reason),
 					outcome: classify.Outcome{Kind: classify.OutcomeAbort, Reason: decision.Reason},
 					start:   start,
 					end:     e.clock(),
@@ -127,12 +126,9 @@ func (e *Executor) doRetryGroup(
 			}
 			defer cancelAttempt()
 
-			// Annotate Context
 			attemptCtx = observe.WithAttemptInfo(attemptCtx, observe.AttemptInfo{
 				RetryIndex: retryIdx,
 				Attempt:    retryIdx,
-				// Standard meaning: RetryIndex is which retry we are on.
-				// Attempt index in timeline is handled by recordAttempt usually appending.
 				IsHedge:    isHedge,
 				HedgeIndex: idx,
 				PolicyID:   pol.ID,
@@ -200,11 +196,9 @@ func (e *Executor) doRetryGroup(
 	launch(0, false)
 
 	// 2. Hedge Loop
-	// We need a timer loop that checks the trigger.
 	start := e.clock()
-
-	// Assuming single threaded coordination for spawning
 	go func() {
+		// Assuming single threaded coordination for spawning
 		if !pol.Hedge.Enabled {
 			return
 		}
@@ -224,14 +218,16 @@ func (e *Executor) doRetryGroup(
 
 		// Loop
 		hedgesLaunched := 0
-		ticker := time.NewTicker(25 * time.Millisecond) // Default check interval
-		defer ticker.Stop()
+		// Use a Timer based on nextCheck values from the trigger.
+		// Start with immediate check.
+		timer := time.NewTimer(0)
+		defer timer.Stop()
 
 		for {
 			select {
 			case <-groupCtx.Done():
 				return
-			case <-ticker.C:
+			case <-timer.C:
 				if hedgesLaunched >= maxHedges {
 					return
 				}
@@ -240,18 +236,33 @@ func (e *Executor) doRetryGroup(
 					AttemptStart:     start,
 					AttemptsLaunched: 1 + hedgesLaunched, // Primary + previous hedges
 					MaxHedges:        maxHedges,
-					Elapsed:          e.clock().Sub(start), // Use wall clock usually? e.clock for tests.
+					Elapsed:          e.clock().Sub(start),
+					Snapshot:         e.getTracker(key).Snapshot(),
 				}
 
 				should, nextCheck := trig.ShouldSpawnHedge(state)
 				if should {
 					hedgesLaunched++
 					launch(hedgesLaunched, true)
+
+					// If we spawned, we might need to spawn another immediately
+					// or calculate the delay for the next one.
+					// Check again immediately (but respect maxHedges loop check).
+					// Drain channel if needed before Reset?
+					// NewTimer(0) fires immediately.
+					if hedgesLaunched < maxHedges {
+						timer.Reset(0)
+					}
+					continue
 				}
 
-				if nextCheck > 0 {
-					ticker.Reset(nextCheck)
+				// If we shouldn't spawn yet, wait using the returned nextCheck.
+				if nextCheck <= 0 {
+					// Trigger didn't return a wait time (e.g. waiting for stats or invalid).
+					// Poll to avoid stalling if stats might appear.
+					nextCheck = 25 * time.Millisecond
 				}
+				timer.Reset(nextCheck)
 			}
 		}
 	}()
