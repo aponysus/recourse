@@ -42,8 +42,10 @@ nav:
       - Classifiers: concepts/classifiers.md
       - Observability: concepts/observability.md
       - Budgets & backpressure: concepts/budgets.md
+      - Hedging: concepts/hedging.md
+      - Circuit Breaking: concepts/circuit-breaking.md
+      - Remote Configuration: concepts/remote-configuration.md
   - Extending: extending.md
-  - Roadmap: roadmap.md
   - Contributing:
       - Onboarding: onboarding.md
 
