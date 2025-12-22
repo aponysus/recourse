@@ -1,0 +1,52 @@
+site_name: recourse
+site_description: Policy-driven, observability-first resilience library for Go services.
+site_url: https://aponysus.github.io/recourse/
+
+repo_url: https://github.com/aponysus/recourse
+repo_name: aponysus/recourse
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: indigo
+    accent: deep purple
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+  icon:
+    logo: material/book-open-page-variant
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Getting started: getting-started.md
+  - Concepts:
+      - Policy keys: concepts/policy-keys.md
+      - Policies & providers: concepts/policies.md
+      - Classifiers: concepts/classifiers.md
+      - Observability: concepts/observability.md
+      - Budgets & backpressure: concepts/budgets.md
+      - Hedging: concepts/hedging.md
+      - Circuit Breaking: concepts/circuit-breaking.md
+      - Remote Configuration: concepts/remote-configuration.md
+      - Integrations: concepts/integrations.md
+  - Extending: extending.md
+  - Contributing:
+      - Onboarding: onboarding.md
+

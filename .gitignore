@@ -1,0 +1,14 @@
+.idea/
+.gocache/
+.gomodcache/
+.venv/
+plan/
+site/
+
+
+*.out
+*.prof
+*.test
+coverage.out
+
+.DS_Store
