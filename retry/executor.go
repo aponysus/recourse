@@ -24,7 +24,18 @@ var (
 
 	// errHedgingRequiresTimeline is an internal sentinel used to switch from fast path to strict path.
 	errHedgingRequiresTimeline = errors.New("recourse: hedging requires timeline")
+
+	defaultExecutor     *Executor
+	defaultExecutorOnce sync.Once
 )
+
+// DefaultExecutor returns the global default executor.
+func DefaultExecutor() *Executor {
+	defaultExecutorOnce.Do(func() {
+		defaultExecutor = NewExecutor()
+	})
+	return defaultExecutor
+}
 
 // FailureMode controls behavior when a dependency is missing.
 type FailureMode int
