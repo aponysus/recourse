@@ -17,6 +17,7 @@ func TestLatencyTrigger_ShouldSpawnHedge(t *testing.T) {
 		percentile string
 		elapsed    time.Duration
 		attempts   int
+		maxHedges  int
 		want       bool
 		wantWait   time.Duration
 	}{
@@ -25,6 +26,7 @@ func TestLatencyTrigger_ShouldSpawnHedge(t *testing.T) {
 			percentile: "p50",
 			elapsed:    5 * time.Millisecond,
 			attempts:   1,
+			maxHedges:  1,
 			want:       false,
 			wantWait:   5 * time.Millisecond, // 10 - 5
 		},
@@ -33,6 +35,7 @@ func TestLatencyTrigger_ShouldSpawnHedge(t *testing.T) {
 			percentile: "p50",
 			elapsed:    11 * time.Millisecond,
 			attempts:   1,
+			maxHedges:  1,
 			want:       true,
 			wantWait:   0,
 		},
@@ -41,6 +44,7 @@ func TestLatencyTrigger_ShouldSpawnHedge(t *testing.T) {
 			percentile: "p99",
 			elapsed:    90 * time.Millisecond,
 			attempts:   1,
+			maxHedges:  1,
 			want:       false,
 			wantWait:   10 * time.Millisecond,
 		},
@@ -49,6 +53,7 @@ func TestLatencyTrigger_ShouldSpawnHedge(t *testing.T) {
 			percentile: "p99",
 			elapsed:    101 * time.Millisecond,
 			attempts:   1,
+			maxHedges:  1,
 			want:       true,
 			wantWait:   0,
 		},
@@ -57,6 +62,7 @@ func TestLatencyTrigger_ShouldSpawnHedge(t *testing.T) {
 			percentile: "p50",
 			elapsed:    20 * time.Millisecond,
 			attempts:   2,
+			maxHedges:  1,
 			want:       false,
 			wantWait:   0,
 		},
@@ -65,6 +71,7 @@ func TestLatencyTrigger_ShouldSpawnHedge(t *testing.T) {
 			percentile: "pXX",
 			elapsed:    1000 * time.Millisecond,
 			attempts:   1,
+			maxHedges:  1,
 			want:       false,
 			wantWait:   0,
 		},
@@ -73,6 +80,7 @@ func TestLatencyTrigger_ShouldSpawnHedge(t *testing.T) {
 			percentile: "p50",
 			elapsed:    100 * time.Millisecond,
 			attempts:   1,
+			maxHedges:  1,
 			want:       false, // Threshold is 0, so <= 0 check returns false?
 			// Logic: threshold <= 0 returns false.
 			wantWait: 0,
@@ -85,6 +93,7 @@ func TestLatencyTrigger_ShouldSpawnHedge(t *testing.T) {
 			state := HedgeState{
 				Elapsed:          tt.elapsed,
 				AttemptsLaunched: tt.attempts,
+				MaxHedges:        tt.maxHedges,
 				Snapshot:         snap,
 			}
 			if tt.name == "Zero Stats" {
