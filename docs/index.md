@@ -114,6 +114,7 @@ Retries are only “safe” if they are observable.
 ## Where to go next
 
 - [Getting started](getting-started.md) – install and first examples.
+- [Changelog](https://github.com/aponysus/recourse/blob/main/CHANGELOG.md) – release history.
 - Concepts:
   - [Policy keys](concepts/policy-keys.md)
   - [Policies & providers](concepts/policies.md)

@@ -5,6 +5,7 @@ Policy-driven, observability-first resilience library in Go for distributed syst
 This repository is **early-stage**. Retry, budgets/backpressure, timelines, outcome classifiers, hedging (fixed-delay & latency-aware), and circuit breakers exist today. Remote control plane and comprehensive integrations are in progress.
 
 Docs site: https://aponysus.github.io/recourse/
+Changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## What you get today
 

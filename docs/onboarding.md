@@ -105,3 +105,10 @@ gofmt -w .
 - Add/adjust tests when changing executor behavior, classification, or observability.
 - Keep policy keys low-cardinality (no IDs/tenants/paths in keys).
 - Keep `docs/` in sync when changing user-facing behavior.
+
+### Release checklist
+
+- Update `CHANGELOG.md` (move items from Unreleased into a new version entry).
+- Run tests and vet: `go test ./...` and `go vet ./...`.
+- Verify docs build if doc changes are included.
+- Tag the release (SemVer) and push the tag to trigger release automation.
