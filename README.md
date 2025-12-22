@@ -15,6 +15,7 @@ Docs site: https://aponysus.github.io/recourse/
 - Outcome classifiers for protocol/domain-aware retry decisions
 - Structured, per-attempt observability via `observe.Timeline` (captured via `observe.RecordTimeline`)
 - Optional callback-based observability via `observe.Observer`
+- **Integrations**: Drop-in helpers for `net/http` (`recourse/integrations/http`) and gRPC (`recourse/integrations/grpc`)
 
 ## Requirements
 
@@ -282,8 +283,8 @@ Implemented:
 Planned (see `docs/roadmap.md`):
 
 - **Remote control-plane**: Dynamic policy updates, caching
-- **Integrations**: HTTP/gRPC helpers
 - **Hardening**: Negative caching for missing keys
+- **Integrations**: Standard library-compatible HTTP and gRPC helpers (opt-in)
 
 ## Project docs
 

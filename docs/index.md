@@ -123,5 +123,6 @@ Retries are only “safe” if they are observable.
   - [Hedging](concepts/hedging.md)
   - [Circuit Breaking](concepts/circuit-breaking.md)
   - [Remote Configuration](concepts/remote-configuration.md)
+  - [Integrations](concepts/integrations.md)
 - [Extending](extending.md) – write custom classifiers/budgets/observers.
 
