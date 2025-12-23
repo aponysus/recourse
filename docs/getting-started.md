@@ -33,6 +33,24 @@ for _, a := range tl.Attempts {
 }
 ```
 
+## Standard usage (custom defaults)
+
+For most applications, you want standard defaults (HTTP classification, unlimited budgets, p99 hedging) but with your own instance.
+
+```go
+// Create a pre-configured executor
+exec := retry.NewDefaultExecutor()
+
+// Use it
+user, err := retry.DoValue[User](ctx, exec, "user-service.GetUser", op)
+```
+
+`NewDefaultExecutor` comes with:
+
+- **Classifiers**: `AutoClassifier` (handles HTTP, generic errors, and registered integrations like gRPC)
+- **Budgets**: `UnlimitedBudget` registered as `"unlimited"`
+- **Hedging**: `FixedDelay` and `Latency` (`p90`, `p99`) triggers registered
+
 ## Explicit wiring (advanced)
 
 If you want to supply policies, classifiers, and budgets explicitly, build a `retry.Executor`:

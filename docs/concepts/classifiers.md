@@ -14,8 +14,9 @@ The executor records `Outcome` on every attempt, and uses it to decide whether t
 
 Core built-ins include:
 
-- `classify.ClassifierAlwaysRetryOnError` (`"always"`): conservative retry-on-error defaults
-- `classify.ClassifierHTTP` (`"http"`): HTTP-aware decisions (e.g., 5xx retryable, 404 non-retryable, 429 may respect `Retry-After`)
+- `classify.AutoClassifier` (default): Intelligently dispatches to `HTTPClassifier` or `AlwaysRetryOnError` based on error type.
+- `classify.ClassifierHTTP` (`"http"`): HTTP-aware decisions (e.g., 5xx retryable, 404 non-retryable, 429 may respect `Retry-After`).
+- `integrations/grpc.Classifier`: gRPC status-code aware decisions (available via `integrations/grpc` module).
 
 Select a classifier by name via `policy.RetryPolicy.ClassifierName`.
 
