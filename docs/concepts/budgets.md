@@ -33,6 +33,5 @@ exec := retry.NewExecutor(retry.ExecutorOptions{
 
 ## Missing budgets and failures
 
-- If no budget is configured (empty name or no registry), attempts are allowed with reason `"no_budget"`.
-- If a policy references an unknown budget name, behavior is controlled by `retry.ExecutorOptions.MissingBudgetMode` (default: allow) and the attempt records `"budget_not_found"`.
-
+- If the budget name is empty, attempts are allowed with reason `"no_budget"`.
+- If the registry is nil, the budget is missing, or the budget is nil, behavior is controlled by `retry.ExecutorOptions.MissingBudgetMode` (default: `retry.FailureDeny`) and the attempt records `"budget_registry_nil"`, `"budget_not_found"`, or `"budget_nil"`.

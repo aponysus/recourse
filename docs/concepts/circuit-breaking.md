@@ -21,18 +21,17 @@ When a downstream service fails repeatedly, continuing to send requests wastes r
 Circuit Breaking is configured via `CircuitPolicy` within `EffectivePolicy`.
 
 ```go
-policy.New("remote-api",
-    policy.WithCircuitBreaker(policy.CircuitPolicy{
-        Enabled:   true,
-        Threshold: 5,               // Open after 5 consecutive failures
-        Cooldown:  10*time.Second,  // Wait 10s before probing
-    }),
-)
+pol := policy.New("remote-api")
+pol.Circuit = policy.CircuitPolicy{
+    Enabled:   true,
+    Threshold: 5,               // Open after 5 consecutive failures
+    Cooldown:  10*time.Second,  // Wait 10s before probing
+}
 ```
 
 ## Behavior
 
 *   **Fast Fail**: When open, requests return a `CircuitOpenError` immediately.
-*   **Probing**: In Half-Open state, only one probe is allowed at a time (or limited by `MaxProbes` if customized).
+*   **Probing**: In Half-Open state, only one probe is allowed at a time.
 *   **Hedging**: Hedging is **disabled** when the breaker is in Half-Open state to avoid overloading the recovering dependency.
 *   **Observability**: `CircuitOpenError` includes the state and reason (`"circuit_open"`, `"circuit_half_open_probe_limit"`).

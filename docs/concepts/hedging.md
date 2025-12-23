@@ -20,11 +20,9 @@ To enable simple fixed-delay hedging:
 
 ```go
 policy.New("my-service",
-    policy.WithHedge(policy.HedgePolicy{
-        Enabled:    true,
-        HedgeDelay: 10 * time.Millisecond,
-        MaxHedges:  2,
-    }),
+    policy.EnableHedging(),
+    policy.HedgeDelay(10*time.Millisecond),
+    policy.HedgeMaxAttempts(2),
 )
 ```
 
@@ -36,11 +34,9 @@ To enable dynamic hedging based on observed latency:
 
 ```go
 policy.New("my-service",
-    policy.WithHedge(policy.HedgePolicy{
-        Enabled:     true,
-        TriggerName: "p99", // dynamic trigger
-        MaxHedges:   2,
-    }),
+    policy.EnableHedging(),
+    policy.HedgeTrigger("p99"), // dynamic trigger
+    policy.HedgeMaxAttempts(2),
 )
 ```
 
@@ -48,7 +44,7 @@ This requires registering a `LatencyTrigger` with the executor:
 
 ```go
 triggers := hedge.NewRegistry()
-triggers.Register("p99", hedge.LatencyTrigger{Percentile: "p99"})
+triggers.Register("p99", &hedge.LatencyTrigger{Percentile: "p99"})
 
 exec := retry.NewExecutor(retry.WithHedgeTriggerRegistry(triggers))
 ```
@@ -59,5 +55,5 @@ The executor automatically tracks latency P-values (P50, P90, P99) for each poli
 
 *   **Winner-Takes-All**: The first successful response cancels all other in-flight attempts.
 *   **Fail-Fast**: If `CancelOnFirstTerminal` is set to `true`, a non-retryable error from *any* attempt will cancel the entire group. Otherwise, the executor waits for other attempts.
-*   **Budgets**: Hedged attempts consume budget tokens (checked against `Hedge.Budget` if specified, or falling back to the retry group budget).
+*   **Budgets**: Hedged attempts use `Hedge.Budget` if configured; otherwise they are unbudgeted even if `Retry.Budget` is set.
 *   **Observability**: `OnHedgeSpawn` is called on the observer when a hedge is launched. `AttemptRecord` includes `IsHedge` and `HedgeIndex`.

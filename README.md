@@ -207,9 +207,9 @@ exec := retry.NewExecutor(
 
 If the provider returns an error, the executor uses `ExecutorOptions.MissingPolicyMode`:
 
-- `retry.FailureFallback` (default): use a safe default policy
+- `retry.FailureDeny` (default): fail fast with `retry.ErrNoPolicy` (wrapped in `*retry.NoPolicyError`)
 - `retry.FailureAllow`: run a single attempt (no retries)
-- `retry.FailureDeny`: fail fast with `retry.ErrNoPolicy` (wrapped in `*retry.NoPolicyError`)
+- `retry.FailureFallback`: use a safe default policy
 
 ### Missing budget behavior
 
@@ -252,10 +252,9 @@ You can fan out to multiple observers with `observe.MultiObserver`.
 ## API cheat sheet
 
 - Facade (`github.com/aponysus/recourse/recourse`)
+  - `recourse.Init(exec)`
   - `recourse.Do(ctx, key string, op)`
   - `recourse.DoValue[T](ctx, key string, op)`
-  - `recourse.DoWithTimeline(ctx, key string, op)`
-  - `recourse.DoValueWithTimeline[T](ctx, key string, op)`
   - `recourse.ParseKey(string) policy.PolicyKey`
 - Advanced (`github.com/aponysus/recourse/retry`)
   - `retry.NewExecutor(opts...)`
@@ -266,8 +265,8 @@ You can fan out to multiple observers with `observe.MultiObserver`.
   - `policy.New(key, opts...)`
   - `policy.HTTPDefaults()`, `policy.DatabaseDefaults()`
   - `policy.MaxAttempts(n)`, `policy.Backoff(...)`
-  - `policy.WithHedge(policy.HedgePolicy{...})`
-  - `policy.WithCircuitBreaker(policy.CircuitPolicy{...})`
+  - `policy.EnableHedging()`, `policy.HedgeDelay(...)`, `policy.HedgeTrigger(...)`, `policy.HedgeMaxAttempts(...)`, `policy.HedgeCancelOnTerminal(...)`
+  - `policy.CircuitPolicy{...}` (assign to `EffectivePolicy.Circuit`)
 - Observability
   - `observe.RecordTimeline(ctx)`
   - `observe.TimelineCaptureFromContext(ctx)`

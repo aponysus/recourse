@@ -26,7 +26,6 @@ Today, `recourse` ships with `controlplane.StaticProvider` for in-process policy
 
 If policy resolution fails, the executor consults `ExecutorOptions.MissingPolicyMode`:
 
-- `retry.FailureFallback` (default): use a safe default policy
+- `retry.FailureDeny` (default): fail fast with `retry.ErrNoPolicy`
 - `retry.FailureAllow`: run a single attempt
-- `retry.FailureDeny`: fail fast with `retry.ErrNoPolicy`
-
+- `retry.FailureFallback`: use a safe default policy

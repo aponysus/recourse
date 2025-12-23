@@ -56,31 +56,36 @@ user, err := retry.DoValue[User](ctx, exec, "user-service.GetUser", op)
 If you want to supply policies, classifiers, and budgets explicitly, build a `retry.Executor`:
 
 ```go
-key := policy.ParseKey("user-service.GetUser")
-
 budgets := budget.NewRegistry()
 budgets.Register("global", budget.NewTokenBucketBudget(100, 50)) // capacity=100, refill=50 tokens/sec
 
+pol := policy.New("user-service.GetUser",
+	policy.MaxAttempts(3),
+	policy.Classifier(classify.ClassifierHTTP),
+	policy.Budget("global"),
+	// Enable Hedging (fixed delay)
+	policy.EnableHedging(),
+	policy.HedgeDelay(10*time.Millisecond),
+	policy.HedgeMaxAttempts(2),
+)
+// Enable Circuit Breaking
+pol.Circuit = policy.CircuitPolicy{
+	Enabled:   true,
+	Threshold: 5,
+	Cooldown:  10 * time.Second,
+}
+key := pol.Key
+
+provider := &controlplane.StaticProvider{
+	Policies: map[policy.PolicyKey]policy.EffectivePolicy{
+		pol.Key: pol,
+	},
+}
+
 exec := retry.NewExecutor(
+	retry.WithProvider(provider),
 	retry.WithBudgetRegistry(budgets),
-	retry.WithPolicy("user-service.GetUser",
-		policy.MaxAttempts(3),
-		policy.Classifier(classify.ClassifierHTTP),
-		policy.Budget("global"),
-		// Enable Circuit Breaking
-		policy.WithCircuitBreaker(policy.CircuitPolicy{
-			Enabled:   true,
-			Threshold: 5,
-			Cooldown:  10 * time.Second,
-		}),
-		// Enable Hedging
-		policy.WithHedge(policy.HedgePolicy{
-			Enabled:    true,
-			HedgeDelay: 10 * time.Millisecond,
-		}),
-	),
 )
 
 user, err := retry.DoValue[User](ctx, exec, key, op)
 ```
-
