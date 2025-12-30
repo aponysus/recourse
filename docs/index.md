@@ -1,5 +1,7 @@
 # recourse
 
+> recourse (n.): a source of help or strength.
+
 Policy-driven, observability-first resilience library for Go services.
 
 ## Why `recourse`?

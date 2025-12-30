@@ -6,6 +6,8 @@ Policy-driven, observability-first resilience library in Go for distributed syst
 [![Go Report Card](https://goreportcard.com/badge/github.com/aponysus/recourse)](https://goreportcard.com/report/github.com/aponysus/recourse)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
+> recourse (n.): a source of help or strength. 
+
 Docs site: https://aponysus.github.io/recourse/
 Changelog: [CHANGELOG.md](CHANGELOG.md)
 
