@@ -4,6 +4,8 @@
 
 Policy-driven, observability-first resilience library for Go services.
 
+New here? Start with [Design overview](design-overview.md), then move to [Getting started](getting-started.md).
+
 ## Why `recourse`?
 
 Retry logic is deceptively easy to write and notoriously hard to operate.
@@ -115,7 +117,11 @@ Retries are only “safe” if they are observable.
 
 ## Where to go next
 
+- [Design overview](design-overview.md) – decision-first intro and tradeoffs.
 - [Getting started](getting-started.md) – install and first examples.
+- [Gotchas & safety checklist](gotchas.md) – avoid common operational failures.
+- [Adoption guide](adoption-guide.md) – staged rollout plan.
+- [Incident debugging](incident-debugging.md) – timeline-based runbook.
 - [Changelog](https://github.com/aponysus/recourse/blob/main/CHANGELOG.md) – release history.
 - Concepts:
   - [Policy keys](concepts/policy-keys.md)

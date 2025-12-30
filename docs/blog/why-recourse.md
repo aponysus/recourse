@@ -1,5 +1,8 @@
 # Retries are load multipliers: policy-keyed resilience for Go
 
+!!! note "Docs readers start here"
+    For a decision-focused intro, start with [Design overview](../design-overview.md) and [Getting started](../getting-started.md).
+
 A retry is not free. Every extra attempt is more concurrency, more sockets, more CPU, and more pressure on the dependency that is already unhappy.
 
 The moment you add retries you are making an operational promise:

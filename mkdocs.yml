@@ -35,9 +35,13 @@ markdown_extensions:
 
 nav:
   - Overview: index.md
+  - Design overview: design-overview.md
   - Why recourse: blog/why-recourse.md
   - Comparison: comparison.md
   - Getting started: getting-started.md
+  - Gotchas & safety checklist: gotchas.md
+  - Adoption guide: adoption-guide.md
+  - Incident debugging: incident-debugging.md
   - Concepts:
       - Policy keys: concepts/policy-keys.md
       - Policies & providers: concepts/policies.md
