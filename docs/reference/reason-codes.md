@@ -3,6 +3,8 @@
 
 Generated from: `budget/reasons.go`, `circuit/types.go`, `classify/`, `retry/`, `integrations/grpc/grpc.go`, `observe/types.go`.
 
+These reason codes and timeline fields are part of the v1 telemetry contract. Changes are breaking.
+
 ## Outcome reasons
 
 These values appear in `observe.AttemptRecord.Outcome.Reason`.

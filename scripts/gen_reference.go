@@ -593,6 +593,7 @@ func renderReasonsMarkdown(budgetReasons, circuitReasons []string, outcome reaso
 	buf.WriteString("# Reason codes and timeline fields\n\n")
 
 	buf.WriteString("Generated from: `budget/reasons.go`, `circuit/types.go`, `classify/`, `retry/`, `integrations/grpc/grpc.go`, `observe/types.go`.\n\n")
+	buf.WriteString("These reason codes and timeline fields are part of the v1 telemetry contract. Changes are breaking.\n\n")
 
 	buf.WriteString("## Outcome reasons\n\n")
 	buf.WriteString("These values appear in `observe.AttemptRecord.Outcome.Reason`.\n\n")

@@ -24,6 +24,14 @@ jobs:
           python-version: "3.x"
       - name: Install docs dependencies
         run: pip install -r requirements-docs.txt
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Generate reference docs
+        run: make docs-reference
+      - name: Verify generated docs are up to date
+        run: git diff --exit-code docs/reference
       - name: Build site
         run: mkdocs build --strict
       - name: Upload Pages artifact
@@ -40,4 +48,3 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
-
