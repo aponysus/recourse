@@ -53,6 +53,9 @@ nav:
       - Remote Configuration: concepts/remote-configuration.md
       - Integrations: concepts/integrations.md
       - Architecture decisions: concepts/architecture-decisions.md
+  - Reference:
+      - Policy schema reference: reference/policy-schema.md
+      - Reason codes & timeline fields: reference/reason-codes.md
   - Extending: extending.md
   - Contributing:
       - Onboarding: onboarding.md

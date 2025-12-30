@@ -13,37 +13,37 @@ const (
 )
 
 type BudgetRef struct {
-	Name string `json:"name"`
-	Cost int    `json:"cost,omitempty"`
+	Name string `json:"name"`          // Budget registry name.
+	Cost int    `json:"cost,omitempty"` // Units consumed per attempt (min 1).
 }
 
 type RetryPolicy struct {
-	MaxAttempts       int           `json:"max_attempts"`
-	InitialBackoff    time.Duration `json:"initial_backoff"`
-	MaxBackoff        time.Duration `json:"max_backoff"`
-	BackoffMultiplier float64       `json:"backoff_multiplier"`
-	Jitter            JitterKind    `json:"jitter"`
+	MaxAttempts       int           `json:"max_attempts"`        // Maximum attempts per call.
+	InitialBackoff    time.Duration `json:"initial_backoff"`     // Starting backoff before retries.
+	MaxBackoff        time.Duration `json:"max_backoff"`         // Upper bound for backoff delays.
+	BackoffMultiplier float64       `json:"backoff_multiplier"`  // Exponential backoff multiplier.
+	Jitter            JitterKind    `json:"jitter"`              // Backoff jitter strategy.
 
-	TimeoutPerAttempt time.Duration `json:"timeout_per_attempt"`
-	OverallTimeout    time.Duration `json:"overall_timeout"`
+	TimeoutPerAttempt time.Duration `json:"timeout_per_attempt"` // Per-attempt timeout (0 disables).
+	OverallTimeout    time.Duration `json:"overall_timeout"`     // Total timeout for all attempts (0 disables).
 
-	ClassifierName string    `json:"classifier_name,omitempty"`
-	Budget         BudgetRef `json:"budget,omitempty"`
+	ClassifierName string    `json:"classifier_name,omitempty"` // Classifier registry name.
+	Budget         BudgetRef `json:"budget,omitempty"`          // Budget gating for retry attempts.
 }
 
 type HedgePolicy struct {
-	Enabled               bool          `json:"enabled"`
-	MaxHedges             int           `json:"max_hedges"`
-	HedgeDelay            time.Duration `json:"hedge_delay"`
-	TriggerName           string        `json:"trigger_name,omitempty"`
-	CancelOnFirstTerminal bool          `json:"cancel_on_first_terminal"`
-	Budget                BudgetRef     `json:"budget,omitempty"`
+	Enabled               bool          `json:"enabled"`                     // Enable hedging for this key.
+	MaxHedges             int           `json:"max_hedges"`                  // Maximum additional hedged attempts.
+	HedgeDelay            time.Duration `json:"hedge_delay"`                 // Delay before spawning a hedge.
+	TriggerName           string        `json:"trigger_name,omitempty"`      // Optional dynamic trigger name.
+	CancelOnFirstTerminal bool          `json:"cancel_on_first_terminal"`    // Cancel on any terminal outcome.
+	Budget                BudgetRef     `json:"budget,omitempty"`            // Budget gating for hedged attempts.
 }
 
 type CircuitPolicy struct {
-	Enabled   bool          `json:"enabled"`
-	Threshold int           `json:"threshold"` // Consecutive failures
-	Cooldown  time.Duration `json:"cooldown"`
+	Enabled   bool          `json:"enabled"`   // Enable circuit breaking for this key.
+	Threshold int           `json:"threshold"` // Consecutive failures to open the circuit.
+	Cooldown  time.Duration `json:"cooldown"`  // Cooldown before a half-open probe.
 }
 
 type PolicySource string
@@ -57,23 +57,23 @@ const (
 )
 
 type NormalizationInfo struct {
-	Changed       bool     `json:"-"`
-	ChangedFields []string `json:"-"`
+	Changed       bool     `json:"-"` // Whether normalization changed any field.
+	ChangedFields []string `json:"-"` // Dot-delimited field paths that were changed.
 }
 
 type Metadata struct {
-	Source        PolicySource      `json:"-"`
-	Normalization NormalizationInfo `json:"-"`
+	Source        PolicySource      `json:"-"` // Policy resolution source.
+	Normalization NormalizationInfo `json:"-"` // Normalization metadata.
 }
 
 type EffectivePolicy struct {
-	Key     PolicyKey     `json:"key"`
-	ID      string        `json:"id,omitempty"`
-	Retry   RetryPolicy   `json:"retry"`
-	Hedge   HedgePolicy   `json:"hedge"`
-	Circuit CircuitPolicy `json:"circuit"`
+	Key     PolicyKey     `json:"key"`           // Policy key this policy applies to.
+	ID      string        `json:"id,omitempty"`  // Optional policy identifier.
+	Retry   RetryPolicy   `json:"retry"`         // Retry envelope configuration.
+	Hedge   HedgePolicy   `json:"hedge"`         // Hedging configuration.
+	Circuit CircuitPolicy `json:"circuit"`       // Circuit breaker configuration.
 
-	Meta Metadata `json:"-"`
+	Meta Metadata `json:"-"` // Resolution metadata (source, normalization).
 }
 
 func DefaultPolicyFor(key PolicyKey) EffectivePolicy {

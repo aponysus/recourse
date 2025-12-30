@@ -4,8 +4,8 @@ import "strings"
 
 // PolicyKey identifies a low-cardinality call site (e.g. "svc.Method").
 type PolicyKey struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
+	Namespace string `json:"namespace"` // Optional logical namespace (e.g. service name).
+	Name      string `json:"name"`      // Operation name within the namespace.
 }
 
 // ParseKey parses "namespace.name" into a PolicyKey.

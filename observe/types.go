@@ -11,50 +11,47 @@ import (
 
 // BudgetDecisionEvent describes a budget gating decision.
 type BudgetDecisionEvent struct {
-	Key        policy.PolicyKey
-	Attempt    int
-	Kind       budget.AttemptKind
-	BudgetName string
-	Cost       int
-	Mode       string // "allow", "deny", "fallback", "allow_unsafe"
-	Allowed    bool
-	Reason     string
+	Key        policy.PolicyKey   // Policy key for the attempted call.
+	Attempt    int                // Attempt index (0-based).
+	Kind       budget.AttemptKind // Retry or hedge attempt.
+	BudgetName string             // Budget registry name.
+	Cost       int                // Units requested from the budget.
+	Mode       string             // "standard", "allow", "deny", "fallback", "allow_unsafe", "unknown"
+	Allowed    bool               // Whether the attempt was allowed.
+	Reason     string             // Decision reason (see budget reasons).
 }
 
 // AttemptRecord describes a single attempt (or hedge) execution.
 type AttemptRecord struct {
-	Attempt   int
-	StartTime time.Time
-	EndTime   time.Time
+	Attempt   int       // Attempt index (0-based).
+	StartTime time.Time // Attempt start time.
+	EndTime   time.Time // Attempt end time.
 
-	// Hedging (Phase 5+)
-	IsHedge    bool
-	HedgeIndex int
+	IsHedge    bool // Whether this attempt is a hedge.
+	HedgeIndex int  // Hedge index within the attempt group.
 
-	// Classification (Phase 3+)
-	Outcome classify.Outcome
+	Outcome classify.Outcome // Classification outcome for this attempt.
 
-	Err error
+	Err error // Error returned by the attempt (if any).
 
-	Backoff time.Duration // backoff before this attempt
+	Backoff time.Duration // Backoff delay before this attempt.
 
-	// Budgets (Phase 4+)
-	BudgetAllowed bool
-	BudgetReason  string
+	BudgetAllowed bool   // Whether budget gating allowed this attempt.
+	BudgetReason  string // Budget decision reason (see budget reasons).
 }
 
 // Timeline is the structured record of a single call and all of its attempts.
 type Timeline struct {
-	Key      policy.PolicyKey
-	PolicyID string
-	Start    time.Time
-	End      time.Time
+	Key      policy.PolicyKey // Policy key for the call.
+	PolicyID string           // Policy identifier (if set).
+	Start    time.Time        // Call start time.
+	End      time.Time        // Call end time.
 
 	// Attributes holds call-level metadata (policy source, fallbacks, normalization notes, etc.).
 	Attributes map[string]string
 
-	Attempts []AttemptRecord
-	FinalErr error
+	Attempts []AttemptRecord // Per-attempt records in execution order.
+	FinalErr error           // Final error returned to the caller.
 }
 
 // Observer receives lifecycle callbacks for a single call.
@@ -62,7 +59,6 @@ type Observer interface {
 	OnStart(ctx context.Context, key policy.PolicyKey, pol policy.EffectivePolicy)
 	OnAttempt(ctx context.Context, key policy.PolicyKey, rec AttemptRecord)
 
-	// Hedging hooks (no-ops until Phase 5).
 	OnHedgeSpawn(ctx context.Context, key policy.PolicyKey, rec AttemptRecord)
 	OnHedgeCancel(ctx context.Context, key policy.PolicyKey, rec AttemptRecord, reason string)
 

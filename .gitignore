@@ -2,6 +2,7 @@
 .gocache/
 .gomodcache/
 .venv/
+.cache/
 plan/
 site/
 

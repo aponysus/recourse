@@ -1,22 +1,33 @@
 # Integrations
 
-`recourse` provides drop-in integrations to make using resilience policies with standard Go libraries ergonomic and correct.
+This page describes the contracts and constraints for the recourse integrations. It focuses on what each helper does, what it does not do, and the conditions required for safe use.
 
-## Philosophy
+## Design goals
 
-- **Standard Library First**: Integrations hook into standard interfaces (`http.Client`, `grpc.ClientConn`) rather than wrapping them in heavy custom types.
-- **Opt-in Dependencies**: The core `recourse` library never imports heavy third-party packages (like gRPC). Integrations that require them are tied to separate modules or sub-packages to keep your dependency graph clean.
-- **Correctness**: Helpers automatically handle subtleties like draining response bodies (HTTP) or classifying protocol-specific error codes (gRPC).
+- Use standard interfaces (for example, `http.Client` and gRPC interceptors).
+- Keep heavy dependencies opt-in by isolating integrations in separate modules.
+- Make retry behavior explicit and observable rather than hidden.
 
 ---
 
-## HTTP Integration
+## HTTP integration (`integrations/http`)
 
-The `integrations/http` package provides resilience for `net/http` calls.
+### What it does
 
-### Usage
+- Provides `DoHTTP`, a wrapper around `http.Client.Do` that runs through a recourse executor.
+- Clones the request for each attempt and replays the body via `req.GetBody` when present.
+- Converts non-2xx responses and transport errors into `StatusError`, which implements `classify.HTTPError`.
+- Drains and closes failed response bodies (up to 4KB) to support connection reuse.
+- Returns the response, a captured `observe.Timeline`, and an error.
 
-Use `DoHTTP` instead of `client.Do`. It handles request cloning (for deadline/retries) and response body management.
+### Constraints and safety
+
+- **Request bodies must be replayable**: if `req.Body` is set and `req.GetBody` is nil, `DoHTTP` returns an error.
+- **Non-idempotent methods should not be retried**: use appropriate policies or classifiers.
+- **Streaming responses are not retried**: failed attempts are drained and closed.
+- **Timeouts are still your responsibility**: use policy timeouts and context deadlines.
+
+### Example
 
 ```go
 package main
@@ -24,94 +35,45 @@ package main
 import (
     "context"
     "net/http"
-    "time"
 
     integration "github.com/aponysus/recourse/integrations/http"
-    "github.com/aponysus/recourse/retry"
     "github.com/aponysus/recourse/policy"
+    "github.com/aponysus/recourse/retry"
 )
 
 func main() {
-    // 1. Setup Executor (or use recourse.Do)
-    exec := retry.NewDefaultExecutor()
-
-    // 2. Standard HTTP client
-    client := &http.Client{Timeout: 5 * time.Second}
+    exec := retry.NewExecutor()
+    client := &http.Client{}
     req, _ := http.NewRequest("GET", "http://api.example.com/data", nil)
 
-    // 3. Execute with resilience
     key := policy.PolicyKey{Name: "api.GetData"}
     resp, timeline, err := integration.DoHTTP(context.Background(), exec, key, client, req)
-    
+    _ = timeline
     if err != nil {
-        // Handle error (timeline contains attempt details)
         return
     }
     defer resp.Body.Close()
-    
-    // consume body...
 }
 ```
 
-### Features
-
-- **Status Classification**: Automatically retries 5xx errors (except 501) and respects `Retry-After` headers on 429/503 responses.
-- **Resource Management**: Automatically drains and closes response bodies for failed attempts to ensure connection reuse.
-- **Timeline Integration**: Captures HTTP-specific metadata (status code, method) in the `observe.Timeline`.
-
 ---
 
-## gRPC Integration
+## gRPC integration (`integrations/grpc`)
 
-The `integrations/grpc` package provides a `UnaryClientInterceptor` for `google.golang.org/grpc`.
+### What it does
 
-> [!NOTE]
-> This integration is a **separate module** to avoid forcing gRPC dependencies on all users.
+- Provides `UnaryClientInterceptor`, which wraps unary client calls with a recourse executor.
+- Maps gRPC method strings to policy keys via `DefaultKeyFunc`:
+  - `"/Service/Method"` -> `{Namespace: "Service", Name: "Method"}`
+- Provides `Classifier`, which maps gRPC status codes to retry outcomes.
+- Provides `WithClassifier`, which sets the gRPC classifier as the executor default.
 
-### Installation
+### Constraints and safety
 
-```bash
-go get github.com/aponysus/recourse/integrations/grpc
-```
+- **Unary only**: there is no streaming interceptor in this package.
+- **Key mapping must remain low-cardinality**: method strings are stable, but avoid embedding IDs in custom key functions.
+- **Retry behavior depends on your policy**: use a classifier appropriate for gRPC.
 
-### Usage
+### Example
 
-Add the interceptor to your gRPC connection options.
-
-```go
-package main
-
-import (
-    "google.golang.org/grpc"
-    
-    "github.com/aponysus/recourse/retry"
-    integration "github.com/aponysus/recourse/integrations/grpc"
-)
-
-func main() {
-    // 1. Setup Executor with gRPC capabilities
-    // This allows the executor to understand gRPC status codes.
-    exec := retry.NewDefaultExecutor(integration.WithClassifier())
-
-    // 2. Create Interceptor
-    // DefaultKeyFunc maps "/Service/Method" -> policy key "Service.Method"
-    interceptor := integration.UnaryClientInterceptor(exec, nil)
-
-    // 3. Dial with Interceptor
-    conn, err := grpc.NewClient("localhost:50051",
-        grpc.WithUnaryInterceptor(interceptor),
-    )
-    // ...
-}
-```
-
-### Features
-
-- **Status Classification**: Smart defaults for gRPC codes:
-    - Retries: `Unavailable`, `ResourceExhausted`.
-    - Aborts: `Canceled`.
-    - Fails: `InvalidArgument`, `Unimplemented`, etc.
-    - Context deadlines (`DeadlineExceeded`) are respected and annotated.
-- **Metadata**: Maps usage of `grpc.Method` to `recourse` policy keys automatically.
-
----
+For a runnable example, see `integrations/grpc/example/main.go`.

@@ -1,72 +1,27 @@
 # Comparison with other libraries
 
-There are many excellent resilience libraries in the Go ecosystem. `recourse` builds on the lessons learned from them but takes a different architectural approach.
+This page is a decision aid, not an exhaustive evaluation. It groups common approaches and lists example projects. For exact behavior and guarantees, consult upstream docs.
 
-## Summary
+## Quick decision questions
 
-| Library | Policy-Driven? | Observability | Scope | Best for... |
-|---|---|---|---|---|
-| **`recourse`** | ✅ (Keys) | ✅ (Timeline/Log) | Retries, Hedging, Circuit Breaking, Budgets | Production microservices requiring consistency & visibility. |
-| **`cenkalti/backoff`** | ❌ (Manual) | ❌ (Manual) | Retries (Backoff only) | Single scripts, simple helpers where observability is optional. |
-| **`avast/retry-go`** | ❌ (Functional) | ⚠️ (Last error only) | Retries | Ergonomic function wrapping for simple needs. |
-| **`hystrix-go`** | ✅ (Command) | ✅ (Stream) | Circuit Breaking, Concurrency Limits | **Legacy/Archived**. Heavy "command" pattern usage. |
-| **`sony/gobreaker`** | ⚠️ (Struct) | ⚠️ (State change) | Circuit Breaking | Standalone circuit breaking without retries. |
+- Do you need centralized policy control, bounded envelopes, and per-attempt observability? -> recourse.
+- Do you only need a simple backoff helper at a few call sites? -> a backoff helper library.
+- Do you only need circuit breaking without retries or hedging? -> a focused circuit breaker library.
+- Do you want a Hystrix-style command abstraction? -> a Hystrix-style library.
 
-## Detailed Comparison
+## Comparison table
 
-### vs. `cenkalti/backoff` & `avast/retry-go`
+| Approach | Example projects | Best for | Tradeoffs |
+|---|---|---|---|
+| Policy-driven envelopes | recourse | Multi-service consistency, operational visibility, and governance | Requires key conventions, policy ownership, and rollout discipline |
+| Backoff helpers | cenkalti/backoff, avast/retry-go | Small apps or isolated call sites | Configuration lives at call sites; consistency and observability are up to you |
+| Circuit breaker only | sony/gobreaker | Adding circuit breaking without a retry framework | You still need retry logic, backoff, and observability elsewhere |
+| Command pattern | hystrix-go | Teams that want a Hystrix-style command abstraction | Heavier integration and a different API shape |
 
-These libraries are **mechanism-first**: you configure *how* to retry (count, delay) at the call site.
+## How to choose
 
-```go
-// avast/retry-go
-retry.Do(
-    func() error { ... },
-    retry.Attempts(3), // Configuration live at call site
-    retry.Delay(1 * time.Second),
-)
-```
-
-**The Problem**:
-1.  **Drift**: Service A retries 3 times, Service B retries 5 times.
-2.  **Opacity**: When `Do()` returns an error, you don't know *what* happened (did it retry? how many times? why did it fail?).
-3.  **Naive**: Usually just "retry on error", lacking protocol awareness (e.g., retrying 404s).
-
-**Recourse Approach**:
-You provide a **key**. Configuration is centralized (and can be updated remotely).
-
-```go
-// recourse
-recourse.Do(ctx, "database.Query", func(ctx context.Context) error { ... })
-```
-
-And you get a **timeline**:
-> "Attempt 1 failed (500), backed off 10ms. Attempt 2 failed (500), backed off 20ms. Attempt 3 (Hedged) succeeded."
-
----
-
-### vs. `afex/hystrix-go`
-
-Hystrix (Java) pioneered the "Command" pattern and Circuit Breaking. `hystrix-go` is the Go port.
-
-**The Problem**:
-1.  **Archived**: The repo is no longer maintained.
-2.  **Heavy**: Requires wrapping code in `hystrix.Go("command_name", func() error { ... })`.
-3.  **Concurrency Limits**: Relies heavily on semaphore isolation, which can be rigid/complex to tune compared to token buckets.
-
-**Recourse Approach**:
-`recourse` uses standard context-aware functions. Circuit breaking is just one "middleware" in the retry loop, seamlessly integrated with hedging and retries. Budgeting (backpressure) is handled via token buckets, which handle burstiness better than strict concurrency limits.
-
----
-
-### vs. `sony/gobreaker`
-
-`gobreaker` is an excellent, focused implementation of the Circuit Breaker pattern.
-
-**The Problem**:
-It *only* does circuit breaking. It doesn't handle retries, backoff, jitter, or hedging. You have to glue it together with other libraries manually.
-
-**Recourse Approach**:
-`recourse` integrates `Circuit Breaker` state into the retry loop.
-*   If the breaker is open, we don't just "fail"; we record the specific reason (`"circuit_open"`) in the timeline.
-*   If the breaker is half-open (probing), we automatically **disable hedging** to avoid hammering the recovering service.
+1. Start with the simplest tool that meets your needs.
+2. If retries are a platform concern, centralize policies rather than duplicating loops.
+3. If on-call needs to explain behavior, prioritize structured observability.
+4. If load amplification is a risk, use budgets and explicit backpressure.
+5. If you only need one resilience mechanism, pick a focused library.

@@ -122,6 +122,8 @@ Retries are only “safe” if they are observable.
 - [Gotchas & safety checklist](gotchas.md) – avoid common operational failures.
 - [Adoption guide](adoption-guide.md) – staged rollout plan.
 - [Incident debugging](incident-debugging.md) – timeline-based runbook.
+- [Policy schema reference](reference/policy-schema.md) – generated field reference.
+- [Reason codes & timeline fields](reference/reason-codes.md) – generated reference.
 - [Changelog](https://github.com/aponysus/recourse/blob/main/CHANGELOG.md) – release history.
 - Concepts:
   - [Policy keys](concepts/policy-keys.md)
