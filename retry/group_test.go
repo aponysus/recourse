@@ -189,6 +189,10 @@ func TestDoRetryGroup_MissingTriggerModeSkipsHedge(t *testing.T) {
 	}
 }
 
+func TestDoRetryGroup_MissingTriggerModeUnknownSkipsHedge(t *testing.T) {
+	runMissingTriggerModeTest(t, FailureModeUnknown, false)
+}
+
 func runMissingTriggerModeTest(t *testing.T, mode FailureMode, expectHedge bool) {
 	t.Helper()
 
