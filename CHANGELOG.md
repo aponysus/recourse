@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - TBD
 
+## [1.0.1] - 2026-01-23
+
+### Fixed
+- Respect MissingTriggerMode when a named hedge trigger is not found.
+
 ## [1.0.0] - 2026-01-05
 
 ### Added
