@@ -17,8 +17,8 @@ import (
 
 type optionObserver struct{}
 
-func (optionObserver) OnStart(context.Context, policy.PolicyKey, policy.EffectivePolicy) {}
-func (optionObserver) OnAttempt(context.Context, policy.PolicyKey, observe.AttemptRecord) {}
+func (optionObserver) OnStart(context.Context, policy.PolicyKey, policy.EffectivePolicy)     {}
+func (optionObserver) OnAttempt(context.Context, policy.PolicyKey, observe.AttemptRecord)    {}
 func (optionObserver) OnHedgeSpawn(context.Context, policy.PolicyKey, observe.AttemptRecord) {}
 func (optionObserver) OnHedgeCancel(context.Context, policy.PolicyKey, observe.AttemptRecord, string) {
 }

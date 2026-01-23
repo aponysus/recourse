@@ -42,7 +42,7 @@ type budgetEventObserver struct {
 	events []observe.BudgetDecisionEvent
 }
 
-func (o *budgetEventObserver) OnStart(context.Context, policy.PolicyKey, policy.EffectivePolicy) {}
+func (o *budgetEventObserver) OnStart(context.Context, policy.PolicyKey, policy.EffectivePolicy)  {}
 func (o *budgetEventObserver) OnAttempt(context.Context, policy.PolicyKey, observe.AttemptRecord) {}
 func (o *budgetEventObserver) OnHedgeSpawn(context.Context, policy.PolicyKey, observe.AttemptRecord) {
 }

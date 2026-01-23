@@ -16,7 +16,7 @@ const (
 
 // Outcome describes the classification of an attempt.
 type Outcome struct {
-	Kind   OutcomeKind
+	Kind OutcomeKind
 	// Reason is a low-cardinality reason code used for observability.
 	// It is part of the v1 telemetry contract.
 	Reason string

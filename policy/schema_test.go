@@ -152,7 +152,7 @@ func TestEffectivePolicyNormalize_ClampsRetryAndTimeouts(t *testing.T) {
 			Budget:     BudgetRef{Cost: -2},
 		},
 		Circuit: CircuitPolicy{
-			Enabled:  true,
+			Enabled:   true,
 			Threshold: 2,
 			Cooldown:  50 * time.Millisecond,
 		},

@@ -29,7 +29,7 @@ type groupResult[T any] struct {
 func (e *Executor) doRetryGroup(
 	ctx context.Context,
 	key policy.PolicyKey,
-// Generic helper for concurrent operations.
+	// Generic helper for concurrent operations.
 	op OperationValue[any],
 	pol policy.EffectivePolicy,
 	retryIdx int,
