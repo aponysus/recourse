@@ -59,7 +59,6 @@ func (cb *ConsecutiveFailureBreaker) Allow(ctx context.Context) Decision {
 	state := cb.updateStateLocked()
 
 	if state == StateOpen {
-		// fmt.Printf("BREAKER: Allow=False (Open)\n")
 		return Decision{Allowed: false, State: StateOpen, Reason: ReasonCircuitOpen}
 	}
 
@@ -92,7 +91,6 @@ func (cb *ConsecutiveFailureBreaker) RecordSuccess(ctx context.Context) {
 			cb.probesSent--
 		}
 	}
-	// If Open, ignoring success (technically shouldn't happen unless Allow was bypassed or race)
 }
 
 func (cb *ConsecutiveFailureBreaker) RecordFailure(ctx context.Context) {
@@ -130,7 +128,7 @@ func (cb *ConsecutiveFailureBreaker) transitionTo(newState State) {
 		cb.probesSuccessful = 0
 	case StateOpen:
 		cb.openTime = cb.now()
-		cb.consecutiveFailures = 0 // Reset counter so next time we start fresh? Or keep? Usually irrelevant in open.
+		cb.consecutiveFailures = 0
 	case StateHalfOpen:
 		cb.probesSent = 0
 		cb.probesSuccessful = 0

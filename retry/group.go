@@ -197,10 +197,21 @@ func (e *Executor) doRetryGroup(
 
 		// Find trigger
 		var trig hedge.Trigger
-		if pol.Hedge.TriggerName != "" && e.triggers != nil {
+		if pol.Hedge.TriggerName != "" {
 			var ok bool
-			trig, ok = e.triggers.Get(pol.Hedge.TriggerName)
-			_ = ok
+			if e.triggers != nil {
+				trig, ok = e.triggers.Get(pol.Hedge.TriggerName)
+			}
+			if !ok {
+				switch e.missingTriggerMode {
+				case FailureFallback:
+					trig = hedge.FixedDelayTrigger{Delay: pol.Hedge.HedgeDelay}
+				case FailureAllow, FailureAllowUnsafe, FailureDeny:
+					return
+				default:
+					return
+				}
+			}
 		}
 
 		// Fallback to fixed delay if no trigger found or Logic

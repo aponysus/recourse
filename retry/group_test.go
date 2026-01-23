@@ -3,6 +3,7 @@ package retry
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -172,5 +173,91 @@ func TestDoRetryGroup_ContextCanceled(t *testing.T) {
 	}
 	if out.Kind != classify.OutcomeAbort || out.Reason != "context_canceled" {
 		t.Fatalf("out=%+v, want abort/context_canceled", out)
+	}
+}
+
+func TestDoRetryGroup_MissingTriggerModeFallbackSpawnsHedge(t *testing.T) {
+	runMissingTriggerModeTest(t, FailureFallback, true)
+}
+
+func TestDoRetryGroup_MissingTriggerModeSkipsHedge(t *testing.T) {
+	modes := []FailureMode{FailureAllow, FailureAllowUnsafe, FailureDeny}
+	for _, mode := range modes {
+		t.Run(failureModeString(mode), func(t *testing.T) {
+			runMissingTriggerModeTest(t, mode, false)
+		})
+	}
+}
+
+func runMissingTriggerModeTest(t *testing.T, mode FailureMode, expectHedge bool) {
+	t.Helper()
+
+	exec := NewExecutorFromOptions(ExecutorOptions{})
+	exec.missingTriggerMode = mode
+
+	key := policy.PolicyKey{Name: "op"}
+	pol := policy.EffectivePolicy{
+		Retry: policy.RetryPolicy{MaxAttempts: 1},
+		Hedge: policy.HedgePolicy{
+			Enabled:     true,
+			MaxHedges:   1,
+			HedgeDelay:  0,
+			TriggerName: "missing",
+		},
+	}
+
+	hedgeStarted := make(chan struct{})
+	var hedgeOnce sync.Once
+	op := func(ctx context.Context) (any, error) {
+		info, _ := observe.AttemptFromContext(ctx)
+		if info.IsHedge {
+			hedgeOnce.Do(func() { close(hedgeStarted) })
+			return "hedge", nil
+		}
+
+		timer := time.NewTimer(50 * time.Millisecond)
+		defer func() {
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+		}()
+
+		select {
+		case <-hedgeStarted:
+		case <-timer.C:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return "primary", nil
+	}
+
+	_, err, out, success := exec.doRetryGroup(
+		context.Background(),
+		key,
+		op,
+		pol,
+		0,
+		successClassifier{},
+		classifierMeta{},
+		0,
+		func(context.Context, observe.AttemptRecord) {},
+	)
+
+	if !success || err != nil {
+		t.Fatalf("success=%v err=%v out=%+v, want success", success, err, out)
+	}
+
+	if expectHedge {
+		if !waitForSignal(hedgeStarted) {
+			t.Fatalf("expected hedge attempt to start")
+		}
+		return
+	}
+
+	if waitForSignal(hedgeStarted) {
+		t.Fatalf("did not expect hedge attempt to start")
 	}
 }

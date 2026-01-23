@@ -66,7 +66,7 @@ The repository is modular by design:
 ## Suggested reading order
 
 1. `README.md` (usage + concepts)
-3. `docs/extending.md` (early draft extension patterns)
+3. `docs/extending.md` (extension patterns)
 4. Code:
    - `recourse/recourse.go` (facade API)
    - `retry/executor.go` (executor + timeline wiring)
