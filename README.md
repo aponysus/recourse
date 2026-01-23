@@ -66,7 +66,7 @@ func main() {
 }
 ```
 
-## Debugging story
+## Debugging
 
 Capture a timeline when you need to answer "what happened on each attempt":
 
