@@ -68,11 +68,25 @@ func TestTokenBucketBudget_NilReceiver(t *testing.T) {
 }
 
 func TestTokenBucketBudget_RefillAndCost(t *testing.T) {
-	b := NewTokenBucketBudget(2, 1)
-	b.tokens = 0
-	b.last = time.Now().Add(-2 * time.Second)
+	clock := &fakeClock{now: time.Unix(0, 0)}
+	b := NewTokenBucketBudget(2, 1, WithClock(clock.Now))
 
 	d := b.AllowAttempt(context.Background(), policy.PolicyKey{}, 0, KindRetry, policy.BudgetRef{Cost: 1})
+	if !d.Allowed {
+		t.Fatalf("expected first attempt to be allowed")
+	}
+	d = b.AllowAttempt(context.Background(), policy.PolicyKey{}, 1, KindRetry, policy.BudgetRef{Cost: 1})
+	if !d.Allowed {
+		t.Fatalf("expected second attempt to be allowed")
+	}
+	d = b.AllowAttempt(context.Background(), policy.PolicyKey{}, 2, KindRetry, policy.BudgetRef{Cost: 1})
+	if d.Allowed || d.Reason != ReasonBudgetDenied {
+		t.Fatalf("decision=%+v, want denied with reason %q before refill", d, ReasonBudgetDenied)
+	}
+
+	clock.Advance(2 * time.Second)
+
+	d = b.AllowAttempt(context.Background(), policy.PolicyKey{}, 3, KindRetry, policy.BudgetRef{Cost: 1})
 	if !d.Allowed {
 		t.Fatalf("expected allowed attempt after refill")
 	}
@@ -80,9 +94,29 @@ func TestTokenBucketBudget_RefillAndCost(t *testing.T) {
 		t.Fatalf("tokens=%v, want 1", b.tokens)
 	}
 
-	d = b.AllowAttempt(context.Background(), policy.PolicyKey{}, 1, KindRetry, policy.BudgetRef{Cost: 2})
+	d = b.AllowAttempt(context.Background(), policy.PolicyKey{}, 4, KindRetry, policy.BudgetRef{Cost: 2})
 	if d.Allowed || d.Reason != ReasonBudgetDenied {
 		t.Fatalf("decision=%+v, want denied with reason %q", d, ReasonBudgetDenied)
+	}
+}
+
+func TestTokenBucketBudget_SetClock(t *testing.T) {
+	b := NewTokenBucketBudget(1, 1)
+	clock := &fakeClock{now: time.Unix(0, 0)}
+	b.SetClock(clock.Now)
+	b.tokens = 0
+	b.last = clock.Now()
+
+	d := b.AllowAttempt(context.Background(), policy.PolicyKey{}, 0, KindRetry, policy.BudgetRef{Cost: 1})
+	if d.Allowed {
+		t.Fatalf("expected denied attempt before advancing fake clock")
+	}
+
+	clock.Advance(time.Second)
+
+	d = b.AllowAttempt(context.Background(), policy.PolicyKey{}, 1, KindRetry, policy.BudgetRef{Cost: 1})
+	if !d.Allowed {
+		t.Fatalf("expected allowed attempt after advancing fake clock")
 	}
 }
 
@@ -96,4 +130,16 @@ func TestTokenBucketBudget_InvalidConfig(t *testing.T) {
 	if d.Allowed {
 		t.Fatalf("expected denied attempt with zero capacity")
 	}
+}
+
+type fakeClock struct {
+	now time.Time
+}
+
+func (f *fakeClock) Now() time.Time {
+	return f.now
+}
+
+func (f *fakeClock) Advance(d time.Duration) {
+	f.now = f.now.Add(d)
 }
