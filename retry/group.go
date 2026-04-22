@@ -3,6 +3,7 @@ package retry
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,6 +23,51 @@ type groupResult[T any] struct {
 	isHedge  bool
 	idx      int
 	panicErr error
+}
+
+var (
+	errHedgeWinnerSuccess = errors.New("winner_success")
+	errHedgeGroupFinished = errors.New("hedge_group_finished")
+)
+
+type hedgeAttemptState struct {
+	mu             sync.Mutex
+	ctx            context.Context
+	rec            observe.AttemptRecord
+	completed      bool
+	cancelNotified bool
+}
+
+func newHedgeAttemptState(ctx context.Context, attempt int, hedgeIndex int, start time.Time) *hedgeAttemptState {
+	return &hedgeAttemptState{
+		ctx: ctx,
+		rec: observe.AttemptRecord{
+			Attempt:    attempt,
+			StartTime:  start,
+			IsHedge:    true,
+			HedgeIndex: hedgeIndex,
+		},
+	}
+}
+
+func (h *hedgeAttemptState) markCompleted() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.completed = true
+}
+
+func (h *hedgeAttemptState) cancelRecord(end time.Time) (context.Context, observe.AttemptRecord, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.completed || h.cancelNotified {
+		return nil, observe.AttemptRecord{}, false
+	}
+
+	h.cancelNotified = true
+	rec := h.rec
+	rec.EndTime = end
+	return h.ctx, rec, true
 }
 
 // doRetryGroup executes a primary attempt and optional hedged attempts.
@@ -49,12 +95,45 @@ func (e *Executor) doRetryGroup(
 	results := make(chan groupResult[any], 1+maxHedges)
 
 	// Group-level context for cancellation.
-	groupCtx, cancelGroup := context.WithCancel(ctx)
-	defer cancelGroup()
+	groupCtx, cancelGroup := context.WithCancelCause(ctx)
 
 	// Track active attempts
 	var activeAttempts atomic.Int32
 	var attemptsLaunched atomic.Int32
+	var hedgeStatesMu sync.Mutex
+	hedgeStates := make([]*hedgeAttemptState, 0, maxHedges)
+	var finishOnce sync.Once
+	finishGroup := func(cause error) {
+		finishOnce.Do(func() {
+			if cause == nil {
+				if ctx.Err() != nil {
+					cause = context.Cause(ctx)
+				} else {
+					cause = errHedgeGroupFinished
+				}
+			}
+
+			cancelGroup(cause)
+			reason := hedgeCancelReason(cause)
+			if reason == "" {
+				return
+			}
+
+			hedgeStatesMu.Lock()
+			states := append([]*hedgeAttemptState(nil), hedgeStates...)
+			hedgeStatesMu.Unlock()
+
+			for _, state := range states {
+				cancelCtx, rec, ok := state.cancelRecord(e.clock())
+				if !ok {
+					continue
+				}
+				rec.Err = hedgeCancelError(reason)
+				e.observer.OnHedgeCancel(cancelCtx, key, rec, reason)
+			}
+		})
+	}
+	defer finishGroup(nil)
 
 	// Helper to launch attempt
 	launch := func(idx int, isHedge bool) {
@@ -65,6 +144,7 @@ func (e *Executor) doRetryGroup(
 			defer activeAttempts.Add(-1)
 
 			start := e.clock()
+			var hedgeState *hedgeAttemptState
 
 			// Budget Check
 			budgetKind := budget.KindRetry
@@ -133,17 +213,25 @@ func (e *Executor) doRetryGroup(
 			})
 
 			if isHedge {
-				e.observer.OnHedgeSpawn(attemptCtx, key, observe.AttemptRecord{
-					Attempt:    retryIdx,
-					IsHedge:    true,
-					HedgeIndex: idx,
-				})
+				hedgeStatesMu.Lock()
+				if groupCtx.Err() != nil {
+					hedgeStatesMu.Unlock()
+					return
+				}
+				hedgeState = newHedgeAttemptState(attemptCtx, retryIdx, idx, start)
+				hedgeStates = append(hedgeStates, hedgeState)
+				hedgeStatesMu.Unlock()
+
+				e.observer.OnHedgeSpawn(attemptCtx, key, hedgeState.rec)
 			}
 
 			// Execute
 			var val any
 			var err error
 			val, err = op(attemptCtx)
+			if hedgeState != nil {
+				hedgeState.markCompleted()
+			}
 
 			end := e.clock()
 
@@ -280,6 +368,7 @@ func (e *Executor) doRetryGroup(
 		select {
 		case res := <-results:
 			if res.outcome.Kind == classify.OutcomeSuccess {
+				finishGroup(errHedgeWinnerSuccess)
 				return res.val, nil, res.outcome, true
 			}
 
@@ -307,10 +396,34 @@ func (e *Executor) doRetryGroup(
 				return lastRel.val, lastRel.err, lastRel.outcome, false
 			}
 
-			// If active > 0, we have hope. Continue waiting.
+		// If active > 0, we have hope. Continue waiting.
 
 		case <-ctx.Done(): // Outer context cancelled
 			return nil, ctx.Err(), classify.Outcome{Kind: classify.OutcomeAbort, Reason: "context_canceled"}, false
 		}
+	}
+}
+
+func hedgeCancelReason(cause error) string {
+	switch {
+	case errors.Is(cause, errHedgeWinnerSuccess):
+		return "winner_success"
+	case errors.Is(cause, context.DeadlineExceeded):
+		return "deadline_exceeded"
+	case errors.Is(cause, context.Canceled):
+		return "context_canceled"
+	default:
+		return ""
+	}
+}
+
+func hedgeCancelError(reason string) error {
+	switch reason {
+	case "deadline_exceeded":
+		return context.DeadlineExceeded
+	case "winner_success", "context_canceled":
+		return context.Canceled
+	default:
+		return nil
 	}
 }
