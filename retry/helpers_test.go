@@ -316,11 +316,12 @@ func TestResolvePolicyWithAttributes(t *testing.T) {
 		missingPolicyMode: FailureDeny,
 	}
 
-	_, _, err := resolvePolicyWithAttributes(context.Background(), exec, key)
+	_, attrs, err := resolvePolicyWithAttributes(context.Background(), exec, key)
 	var npe *NoPolicyError
 	if !errors.As(err, &npe) {
 		t.Fatalf("expected NoPolicyError, got %v", err)
 	}
+	assertPolicyResolutionAttrs(t, attrs, "deny", policy.PolicySourceUnknown, false)
 
 	exec = &Executor{
 		provider: policyProviderStub{pol: policy.EffectivePolicy{
@@ -336,6 +337,14 @@ func TestResolvePolicyWithAttributes(t *testing.T) {
 	if attrs["policy_error"] == "" {
 		t.Fatalf("expected policy_error attribute to be set")
 	}
+	assertPolicyResolutionAttrs(t, attrs, "allow", policy.PolicySourceUnknown, true,
+		"hedge.budget.cost",
+		"retry.backoff_multiplier",
+		"retry.budget.cost",
+		"retry.initial_backoff",
+		"retry.jitter",
+		"retry.max_backoff",
+	)
 	if pol.Retry.MaxAttempts != 1 {
 		t.Fatalf("maxAttempts=%d, want 1", pol.Retry.MaxAttempts)
 	}
@@ -345,7 +354,22 @@ func TestResolvePolicyWithAttributes_FallbackUsesReturnedPolicy(t *testing.T) {
 	key := policy.PolicyKey{Name: "op"}
 	exec := &Executor{
 		provider: policyProviderStub{
-			pol: policy.EffectivePolicy{Retry: policy.RetryPolicy{MaxAttempts: 4}},
+			pol: policy.EffectivePolicy{
+				Retry: policy.RetryPolicy{
+					MaxAttempts:       4,
+					InitialBackoff:    10 * time.Millisecond,
+					MaxBackoff:        20 * time.Millisecond,
+					BackoffMultiplier: 2,
+					Jitter:            policy.JitterNone,
+					Budget:            policy.BudgetRef{Cost: 1},
+				},
+				Hedge: policy.HedgePolicy{
+					Budget: policy.BudgetRef{Cost: 1},
+				},
+				Meta: policy.Metadata{
+					Source: policy.PolicySourceLKG,
+				},
+			},
 			err: controlplane.ErrProviderUnavailable,
 		},
 		missingPolicyMode: FailureFallback,
@@ -358,9 +382,7 @@ func TestResolvePolicyWithAttributes_FallbackUsesReturnedPolicy(t *testing.T) {
 	if pol.Retry.MaxAttempts != 4 {
 		t.Fatalf("maxAttempts=%d, want 4", pol.Retry.MaxAttempts)
 	}
-	if len(attrs) != 0 {
-		t.Fatalf("expected no attributes, got %+v", attrs)
-	}
+	assertPolicyResolutionAttrs(t, attrs, "fallback", policy.PolicySourceLKG, false)
 }
 
 func TestResolvePolicyWithAttributes_NormalizationErrorFallback(t *testing.T) {
@@ -381,6 +403,7 @@ func TestResolvePolicyWithAttributes_NormalizationErrorFallback(t *testing.T) {
 	if attrs["policy_error"] == "" {
 		t.Fatalf("expected policy_error attribute")
 	}
+	assertPolicyResolutionAttrs(t, attrs, "fallback", policy.PolicySourceDefault, false)
 	if pol.Retry.MaxAttempts != 3 {
 		t.Fatalf("maxAttempts=%d, want 3", pol.Retry.MaxAttempts)
 	}

@@ -20,6 +20,6 @@ use the same validated policy.
 
 ## Consequences
 - Caller-provided policies may be adjusted to keep the system safe.
-- Observability can report when normalization occurred.
+- Observability can report when normalization occurred via timeline attributes such as `policy_source`, `policy_normalized`, and `policy_normalized_fields`.
 - Policy authors should consult documented limits to avoid surprises.
 - Tight limits may need to be revisited if valid use cases require higher bounds.

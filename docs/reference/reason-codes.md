@@ -102,3 +102,15 @@ These values appear in `observe.BudgetDecisionEvent.Mode`.
 | `Allowed` | `bool` | Whether the attempt was allowed. |
 | `Reason` | `string` | Decision reason (see budget reasons). |
 
+## Timeline attribute keys
+
+### Policy resolution attributes
+
+These keys appear in `observe.Timeline.Attributes`.
+
+| Attribute | Allowed values / format | Notes |
+|---|---|---|
+| `policy_mode` | `standard`, `fallback`, `allow`, `deny` | Resolution path used for the final execution outcome. |
+| `policy_source` | `static`, `remote`, `lkg`, `default`, `unknown` | Source of the final policy used for execution, or `unknown` when no concrete policy was applied. |
+| `policy_normalized` | `true`, `false` | Whether normalization changed the final policy used for execution. |
+| `policy_normalized_fields` | comma-separated sorted field paths | Present only when `policy_normalized=true`; omitted when normalization changed no fields. |

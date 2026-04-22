@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,15 @@ var (
 
 	// errHedgingRequiresTimeline is an internal sentinel used to switch from fast path to strict path.
 	errHedgingRequiresTimeline = errors.New("recourse: hedging requires timeline")
+)
+
+const (
+	policyModeStandard = "standard"
+
+	policyAttrMode             = "policy_mode"
+	policyAttrSource           = "policy_source"
+	policyAttrNormalized       = "policy_normalized"
+	policyAttrNormalizedFields = "policy_normalized_fields"
 )
 
 // FailureMode controls behavior when a dependency is missing.
@@ -768,6 +778,7 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 
 func resolvePolicyWithAttributes(ctx context.Context, exec *Executor, key policy.PolicyKey) (policy.EffectivePolicy, map[string]string, error) {
 	attrs := make(map[string]string)
+	mode := policyModeStandard
 
 	var pol policy.EffectivePolicy
 	var err error
@@ -791,10 +802,13 @@ func resolvePolicyWithAttributes(ctx context.Context, exec *Executor, key policy
 	if err != nil {
 		switch exec.missingPolicyMode {
 		case FailureDeny:
+			populatePolicyResolutionAttributes(attrs, "deny", policy.EffectivePolicy{}, false)
 			return policy.EffectivePolicy{}, attrs, &NoPolicyError{Key: key, Err: err}
 		case FailureAllow:
+			mode = "allow"
 			pol = policy.EffectivePolicy{Key: key, Retry: policy.RetryPolicy{MaxAttempts: 1}}
 		case FailureFallback:
+			mode = "fallback"
 			if isZeroEffectivePolicy(pol) {
 				pol = policy.DefaultPolicyFor(key)
 			}
@@ -809,18 +823,53 @@ func resolvePolicyWithAttributes(ctx context.Context, exec *Executor, key policy
 	if normErr != nil {
 		switch exec.missingPolicyMode {
 		case FailureDeny:
+			attrs["policy_error"] = fmt.Sprintf("normalization_failed: %v", normErr)
+			populatePolicyResolutionAttributes(attrs, "deny", policy.EffectivePolicy{}, false)
 			return policy.EffectivePolicy{}, attrs, &NoPolicyError{Key: key, Err: normErr}
 		case FailureAllow:
+			mode = "allow"
 			pol = policy.EffectivePolicy{Key: key, Retry: policy.RetryPolicy{MaxAttempts: 1}}
 			pol, _ = pol.Normalize()
 		case FailureFallback:
+			mode = "fallback"
 			pol = policy.DefaultPolicyFor(key)
 			pol, _ = pol.Normalize()
 		}
 		attrs["policy_error"] = fmt.Sprintf("normalization_failed: %v", normErr)
 	}
 
+	populatePolicyResolutionAttributes(attrs, mode, pol, true)
 	return pol, attrs, nil
+}
+
+func populatePolicyResolutionAttributes(attrs map[string]string, mode string, pol policy.EffectivePolicy, hasPolicy bool) {
+	if attrs == nil {
+		return
+	}
+
+	attrs[policyAttrMode] = mode
+	attrs[policyAttrSource] = string(policy.PolicySourceUnknown)
+	attrs[policyAttrNormalized] = "false"
+	delete(attrs, policyAttrNormalizedFields)
+
+	if !hasPolicy {
+		return
+	}
+
+	if pol.Meta.Source != "" {
+		attrs[policyAttrSource] = string(pol.Meta.Source)
+	}
+
+	if pol.Meta.Normalization.Changed {
+		attrs[policyAttrNormalized] = "true"
+	}
+	if len(pol.Meta.Normalization.ChangedFields) == 0 {
+		return
+	}
+
+	fields := append([]string(nil), pol.Meta.Normalization.ChangedFields...)
+	sort.Strings(fields)
+	attrs[policyAttrNormalizedFields] = strings.Join(fields, ",")
 }
 
 func resolvePolicyFast(ctx context.Context, exec *Executor, key policy.PolicyKey) (policy.EffectivePolicy, error) {

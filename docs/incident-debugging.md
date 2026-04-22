@@ -46,7 +46,11 @@ Then dig into common failure modes:
 - **Budgets**: Check `AttemptRecord.BudgetAllowed` and `AttemptRecord.BudgetReason`. If you use an observer, the `BudgetDecisionEvent` will include the mode and reason.
 - **Hedging**: Look for `AttemptRecord.IsHedge` and `AttemptRecord.HedgeIndex` to see which attempts were hedges.
 - **Circuit breaking**: Inspect `AttemptRecord.Err` and `AttemptRecord.Outcome.Reason` for signals that the circuit short-circuited the call.
-- **Policy resolution**: Inspect `tl.Attributes` for provider and normalization metadata when present.
+- **Policy resolution**: Inspect `tl.Attributes` for:
+  - `policy_mode` (`standard`, `fallback`, `allow`, `deny`)
+  - `policy_source` (`static`, `remote`, `lkg`, `default`, `unknown`)
+  - `policy_normalized` (`true` / `false`)
+  - `policy_normalized_fields` (comma-separated field paths, omitted when empty)
 
 ## Questions you should be able to answer
 

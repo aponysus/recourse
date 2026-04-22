@@ -1054,6 +1054,16 @@ func renderReasonsMarkdown(budgetReasons, circuitReasons []string, outcome reaso
 	writeStruct(&buf, "AttemptRecord", structs["AttemptRecord"])
 	writeStruct(&buf, "BudgetDecisionEvent", structs["BudgetDecisionEvent"])
 
+	buf.WriteString("## Timeline attribute keys\n\n")
+	buf.WriteString("### Policy resolution attributes\n\n")
+	buf.WriteString("These keys appear in `observe.Timeline.Attributes`.\n\n")
+	buf.WriteString("| Attribute | Allowed values / format | Notes |\n")
+	buf.WriteString("|---|---|---|\n")
+	buf.WriteString("| `policy_mode` | `standard`, `fallback`, `allow`, `deny` | Resolution path used for the final execution outcome. |\n")
+	buf.WriteString("| `policy_source` | `static`, `remote`, `lkg`, `default`, `unknown` | Source of the final policy used for execution, or `unknown` when no concrete policy was applied. |\n")
+	buf.WriteString("| `policy_normalized` | `true`, `false` | Whether normalization changed the final policy used for execution. |\n")
+	buf.WriteString("| `policy_normalized_fields` | comma-separated sorted field paths | Present only when `policy_normalized=true`; omitted when normalization changed no fields. |\n")
+
 	return buf.Bytes(), nil
 }
 
