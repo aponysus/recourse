@@ -28,9 +28,20 @@ type TokenBucketBudget struct {
 
 	tokens float64
 	last   time.Time
+	nowFn  func() time.Time
 }
 
-func NewTokenBucketBudget(capacity int, refillPerSecond float64) *TokenBucketBudget {
+// TokenBucketBudgetOption configures a TokenBucketBudget at construction time.
+type TokenBucketBudgetOption func(*TokenBucketBudget)
+
+// WithClock overrides the bucket clock, primarily for tests.
+func WithClock(f func() time.Time) TokenBucketBudgetOption {
+	return func(b *TokenBucketBudget) {
+		b.nowFn = f
+	}
+}
+
+func NewTokenBucketBudget(capacity int, refillPerSecond float64, opts ...TokenBucketBudgetOption) *TokenBucketBudget {
 	if capacity < 0 {
 		capacity = 0
 	}
@@ -44,9 +55,28 @@ func NewTokenBucketBudget(capacity int, refillPerSecond float64) *TokenBucketBud
 		capacity:        float64(capacity),
 		refillPerSecond: refillPerSecond,
 		tokens:          float64(capacity),
-		last:            time.Now(),
 	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(b)
+		}
+	}
+	b.last = b.now()
 	return b
+}
+
+func (b *TokenBucketBudget) now() time.Time {
+	if b.nowFn != nil {
+		return b.nowFn()
+	}
+	return time.Now()
+}
+
+// SetClock overrides the bucket clock, primarily for tests.
+func (b *TokenBucketBudget) SetClock(f func() time.Time) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.nowFn = f
 }
 
 func (b *TokenBucketBudget) AllowAttempt(_ context.Context, _ policy.PolicyKey, _ int, _ AttemptKind, ref policy.BudgetRef) Decision {
@@ -57,7 +87,7 @@ func (b *TokenBucketBudget) AllowAttempt(_ context.Context, _ policy.PolicyKey, 
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	now := time.Now()
+	now := b.now()
 	// Sanity check state
 	if math.IsNaN(b.tokens) || math.IsInf(b.tokens, 0) {
 		b.tokens = 0
