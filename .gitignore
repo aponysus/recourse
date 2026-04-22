@@ -13,3 +13,4 @@ site/
 coverage.out
 
 .DS_Store
+.codex
