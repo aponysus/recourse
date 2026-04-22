@@ -7,8 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-22
+
 ### Added
-- TBD
+- Deterministic clock injection for `TokenBucketBudget` via `SetClock` and constructor options for test control.
+- Stable policy-resolution timeline attributes: `policy_mode`, `policy_source`, `policy_normalized`, and `policy_normalized_fields`.
+- `observe.Observer.OnHedgeCancel` emission for in-flight hedge cancellations with low-cardinality reasons.
+
+### Changed
+- Refreshed dependency versions in `integrations/grpc` and the OpenTelemetry example module.
+- Updated example module requirements to reference the `v1.1.0` root release.
+
+### Fixed
+- Skip Codecov uploads on Dependabot pull requests where `CODECOV_TOKEN` is unavailable.
+- Re-pin the docs toolchain to a known-good Pygments version so GitHub Pages builds remain stable.
 
 ## [1.0.1] - 2026-01-23
 

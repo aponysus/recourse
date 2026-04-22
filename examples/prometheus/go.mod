@@ -3,7 +3,7 @@ module github.com/aponysus/recourse/examples/prometheus
 go 1.23.0
 
 require (
-	github.com/aponysus/recourse v0.1.0
+	github.com/aponysus/recourse v1.1.0
 	github.com/prometheus/client_golang v1.19.1
 )
 
