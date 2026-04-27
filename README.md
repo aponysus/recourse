@@ -2,7 +2,7 @@
 
 Policy-driven, observable resilience for Go services: retries, hedging, circuit breaking, and budgets.
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/aponysus/recourse.svg)](https://pkg.go.dev/github.com/aponysus/recourse)
+[![Go Reference](https://pkg.go.dev/badge/github.com/aponysus/recourse/recourse.svg)](https://pkg.go.dev/github.com/aponysus/recourse/recourse)
 [![Go Report Card](https://goreportcard.com/badge/github.com/aponysus/recourse)](https://goreportcard.com/report/github.com/aponysus/recourse)
 [![Coverage](https://codecov.io/gh/aponysus/recourse/branch/main/graph/badge.svg)](https://codecov.io/gh/aponysus/recourse)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -44,6 +44,9 @@ go get github.com/aponysus/recourse@latest
 
 ## Quick start
 
+For the lowest-friction path, call the facade with a stable, low-cardinality key.
+If you do not call `recourse.Init`, the first call lazily creates the default executor and uses `policy.DefaultPolicyFor(key)`.
+
 ```go
 package main
 
@@ -65,6 +68,46 @@ func main() {
 	_ = err
 }
 ```
+
+For application startup, wire explicit policies into an executor and install it before the first call:
+
+```go
+package main
+
+import (
+	"context"
+	"time"
+
+	"github.com/aponysus/recourse/controlplane"
+	"github.com/aponysus/recourse/policy"
+	"github.com/aponysus/recourse/recourse"
+	"github.com/aponysus/recourse/retry"
+)
+
+type User struct{ ID string }
+
+func main() {
+	key := policy.ParseKey("user-service.GetUser")
+	policies := map[policy.PolicyKey]policy.EffectivePolicy{
+		key: policy.NewFromKey(key,
+			policy.MaxAttempts(3),
+			policy.ConstantBackoff(20*time.Millisecond),
+		),
+	}
+
+	recourse.Init(retry.NewDefaultExecutor(
+		retry.WithProvider(&controlplane.StaticProvider{Policies: policies}),
+	))
+
+	user, err := recourse.DoValue[User](context.Background(), key.String(), func(ctx context.Context) (User, error) {
+		return User{ID: "123"}, nil
+	})
+	_ = user
+	_ = err
+}
+```
+
+Call `recourse.Init` only during startup, before any `recourse.Do` or `recourse.DoValue` call. If you prefer explicit dependency ownership, use `retry.DoValue(ctx, exec, key, op)` directly instead of the global facade.
 
 ## Debugging
 
