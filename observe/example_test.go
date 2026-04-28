@@ -2,21 +2,35 @@ package observe_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/aponysus/recourse/observe"
+	"github.com/aponysus/recourse/recourse"
 )
 
 func ExampleRecordTimeline() {
 	ctx, capture := observe.RecordTimeline(context.Background())
+	attempts := 0
 
-	// Pass ctx to recourse.Do, recourse.DoValue, or retry.Executor.Do.
-	// The capture is populated after the call returns.
-	_ = ctx
+	err := recourse.Do(ctx, "svc.GetUser", func(ctx context.Context) error {
+		attempts++
+		if attempts == 1 {
+			return errors.New("temporary upstream error")
+		}
+		return nil
+	})
 
-	if capture.Timeline() == nil {
-		fmt.Println("no attempts yet")
+	tl := capture.Timeline()
+	fmt.Println("err:", err)
+	fmt.Println("policy_source:", tl.Attributes["policy_source"])
+	for _, attempt := range tl.Attempts {
+		fmt.Printf("attempt=%d reason=%s err=%v\n", attempt.Attempt, attempt.Outcome.Reason, attempt.Err)
 	}
+
 	// Output:
-	// no attempts yet
+	// err: <nil>
+	// policy_source: default
+	// attempt=0 reason=retryable_error err=temporary upstream error
+	// attempt=1 reason=success err=<nil>
 }

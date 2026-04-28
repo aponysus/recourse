@@ -23,7 +23,6 @@ user, err := recourse.DoValue[User](
 When you need structured “what happened?” data:
 
 ```go
-```go
 ctx, capture := observe.RecordTimeline(ctx)
 user, err := recourse.DoValue(ctx, "user-service.GetUser", op)
 tl := capture.Timeline()
@@ -66,8 +65,8 @@ The repository is modular by design:
 ## Suggested reading order
 
 1. `README.md` (usage + concepts)
-3. `docs/extending.md` (extension patterns)
-4. Code:
+2. `docs/extending.md` (extension patterns)
+3. Code:
    - `recourse/recourse.go` (facade API)
    - `retry/executor.go` (executor + timeline wiring)
    - `observe/types.go` (timeline/attempt records)
@@ -100,7 +99,7 @@ gofmt -w .
 ### Project conventions
 
 - Keep core packages **stdlib-only**; put non-stdlib deps in `integrations/*`.
-- Prefer additive API changes during `v0.x`; avoid breaking exported APIs.
+- `v1.x` follows SemVer; prefer additive API changes and avoid breaking exported APIs in stable packages.
 - Add/adjust tests when changing executor behavior, classification, or observability.
 - Keep policy keys low-cardinality (no IDs/tenants/paths in keys).
 - Keep `docs/` in sync when changing user-facing behavior.

@@ -50,32 +50,48 @@ go get github.com/aponysus/recourse@latest
 
 ## Quick start
 
+### Zero-config facade
+
 For the lowest-friction path, call the facade with a stable, low-cardinality key.
-If you do not call `recourse.Init`, the first call lazily creates the default executor and uses `policy.DefaultPolicyFor(key)`.
+If you do not call `recourse.Init`, recourse lazily creates the default executor and uses `policy.DefaultPolicyFor(key)`.
+That default policy gives you a bounded retry envelope, so you can see retry behavior immediately.
 
 ```go
 package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
+	"github.com/aponysus/recourse/observe"
 	"github.com/aponysus/recourse/recourse"
 )
 
 type User struct{ ID string }
 
 func main() {
-	ctx := context.Background()
+	ctx, capture := observe.RecordTimeline(context.Background())
+	attempts := 0
 
 	user, err := recourse.DoValue[User](ctx, "user-service.GetUser", func(ctx context.Context) (User, error) {
+		attempts++
+		if attempts == 1 {
+			return User{}, errors.New("temporary upstream error")
+		}
 		return User{ID: "123"}, nil
 	})
-	_ = user
-	_ = err
+
+	fmt.Printf("user=%s err=%v attempts=%d\n", user.ID, err, attempts)
+	for _, attempt := range capture.Timeline().Attempts {
+		fmt.Printf("attempt=%d reason=%s err=%v\n", attempt.Attempt, attempt.Outcome.Reason, attempt.Err)
+	}
 }
 ```
 
 [Run a retry + timeline example in Go Playground](https://go.dev/play/p/AjNOC90vnpb)
+
+### Explicit policies at startup
 
 For application startup, wire explicit policies into an executor and install it before the first call:
 

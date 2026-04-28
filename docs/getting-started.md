@@ -8,12 +8,41 @@ go get github.com/aponysus/recourse@latest
 
 ## The simplest path (facade)
 
-Use `recourse.Do` / `recourse.DoValue` for the “zero config” path:
+Use `recourse.Do` / `recourse.DoValue` for the "zero config" path.
+If you do not call `recourse.Init`, recourse lazily creates the default executor and uses `policy.DefaultPolicyFor(key)`.
+That default policy is bounded and retries transient errors, so a first run can show the retry path and the timeline:
 
 ```go
-user, err := recourse.DoValue[User](ctx, "user-service.GetUser", func(ctx context.Context) (User, error) {
-	return client.GetUser(ctx, userID)
-})
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/aponysus/recourse/observe"
+	"github.com/aponysus/recourse/recourse"
+)
+
+type User struct{ ID string }
+
+func main() {
+	ctx, capture := observe.RecordTimeline(context.Background())
+	attempts := 0
+
+	user, err := recourse.DoValue[User](ctx, "user-service.GetUser", func(ctx context.Context) (User, error) {
+		attempts++
+		if attempts == 1 {
+			return User{}, errors.New("temporary upstream error")
+		}
+		return User{ID: "123"}, nil
+	})
+
+	fmt.Printf("user=%s err=%v attempts=%d\n", user.ID, err, attempts)
+	for _, attempt := range capture.Timeline().Attempts {
+		fmt.Printf("attempt=%d reason=%s err=%v\n", attempt.Attempt, attempt.Outcome.Reason, attempt.Err)
+	}
+}
 ```
 
 Keys must be **low-cardinality** (stable across requests). Good: `"payments.Charge"`. Bad: `"GET /users/123"`.
