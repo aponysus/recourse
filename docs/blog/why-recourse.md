@@ -1,37 +1,63 @@
-# Retries are load multipliers: policy-keyed resilience for Go
+# Retries are policy, not control flow
 
-!!! note 
-    For a decision-focused intro, start with [Design overview](../design-overview.md).
-    Then see [Getting started](../getting-started.md), [Adoption guide](../adoption-guide.md), [Gotchas](../gotchas.md), and [Incident debugging](../incident-debugging.md).
+A retry is not free.
 
-A retry is not free. Every extra attempt is more concurrency, more sockets, more CPU, and more pressure on the dependency that is already unhappy.
+Every extra attempt is more concurrency, more sockets, more CPU, and more pressure on the dependency that is already unhappy.
 
-The moment you add retries you are making an operational promise. recourse makes the mechanics explicit:
+That means retry behavior is not just local control flow. It is operational policy.
 
-- attempts are bounded by policy
-- outcomes are classified on each attempt
-- load can be gated with budgets
-- behavior is explainable during an incident via timelines and observer hooks
+The moment you add retries, you are making a promise:
+
+- attempts are bounded
+- failures are classified correctly
+- backoff is deliberate
+- load is gated when a dependency is struggling
+- behavior is explainable during an incident
 <!-- Claim-ID: CLM-019 -->
 <!-- Claim-ID: CLM-023 -->
 <!-- Claim-ID: CLM-010 -->
 <!-- Claim-ID: CLM-013 -->
 <!-- Claim-ID: CLM-014 -->
 
-recourse exists to make that promise repeatable in Go services. The envelope centralizes retries, timeouts, budgets, hedges, and circuit breaking so call sites stay boring.
+`recourse` exists to make that promise repeatable in Go services.
+
+It gives call sites a boring API and moves resilience decisions into a policy-keyed envelope: retries, timeouts, budgets, hedging, circuit breaking, classifiers, and timelines.
 <!-- Claim-ID: CLM-019 -->
 <!-- Claim-ID: CLM-010 -->
 <!-- Claim-ID: CLM-017 -->
 <!-- Claim-ID: CLM-016 -->
-Observability is built in through timelines and hooks.
+<!-- Claim-ID: CLM-023 -->
 <!-- Claim-ID: CLM-013 -->
-<!-- Claim-ID: CLM-014 -->
 
-If you have seen my Python library redress, think of recourse as the Go counterpart that leans harder into "control plane" ideas: central envelopes keyed by operation, plus backpressure and tail-latency tooling.
+As of `v1.2.0`, the core API is covered by the `v1.x` compatibility guarantee, and optional integrations such as gRPC and OpenTelemetry live in separate modules so the root module stays small.
+<!-- Claim-ID: CLM-020 -->
 
-## The core move: the call site picks a key rather than mechanism
+## Who this is for
 
-Most retry libraries start from "how many attempts" and "which backoff." recourse starts from a different primitive:
+`recourse` is not for every retry.
+
+If you need one small retry loop at one or two call sites, a focused backoff helper is probably the right tool. Keep the dependency small. Keep the behavior local. There is no virtue in turning a simple call into a platform.
+
+`recourse` is for the point where retry behavior starts becoming an operating concern:
+
+- multiple services have copied slightly different retry loops
+- teams disagree about which failures are retryable
+- incidents are made worse by retry amplification
+- nobody can tell what happened on each attempt
+- retry, timeout, circuit, and budget behavior needs to be governed consistently
+
+That is the line where retries stop being a helper function and start being policy.
+
+## The core move: the call site picks a key rather than a mechanism
+
+Most retry libraries start with mechanism:
+
+- how many attempts?
+- which backoff?
+- which errors?
+- which timeout?
+
+`recourse` starts from a different primitive:
 
 **A low-cardinality policy key is the unit of control.**
 
@@ -45,12 +71,13 @@ user, err := recourse.DoValue[User](
 )
 ```
 
-That key selects the envelope, which can include:
-<!-- Claim-ID: CLM-025 -->
+The call site names the operation. The policy defines the envelope.
+
+That envelope can include:
 
 - retry limits and backoff
 - per-attempt and overall timeouts
-- budgets (backpressure gates)
+- budgets as backpressure gates
 - hedging configuration
 - circuit breaking configuration
 <!-- Claim-ID: CLM-019 -->
@@ -58,186 +85,251 @@ That key selects the envelope, which can include:
 <!-- Claim-ID: CLM-017 -->
 <!-- Claim-ID: CLM-016 -->
 
-Classification is handled by pluggable classifiers that map `(value, err)` into an `Outcome`.
+Classification is handled separately by classifiers that map `(value, err)` into an `Outcome`.
 <!-- Claim-ID: CLM-023 -->
 
-The point is to keep call sites boring. You should not re-implement resilience semantics in every package that calls an API.
+That distinction matters. Call sites should not have to re-implement resilience semantics every time they call another service.
 
-## Design principle: keys must be low-cardinality or nothing scales
+## Keys must be low-cardinality or the model breaks
 
-Once keys drive policy selection, they also drive observability dimensions, caches, breakers, and latency trackers. High-cardinality keys are a reliability bug. They blow up memory and produce unusable telemetry.
+Once keys select policy, they also become observability dimensions. They feed caches, breakers, budgets, latency trackers, metrics, traces, and logs.
+
+So keys must be stable and low-cardinality.
 
 Good keys:
 
-- "payments.Charge"
-- "user-service.GetUser"
+- `"payments.Charge"`
+- `"user-service.GetUser"`
+- `"db.Users.Query"`
 
 Bad keys:
 
-- "GET /users/123"
-- "user-service.GetUser?user_id=123"
+- `"GET /users/123"`
+- `"user-service.GetUser?user_id=123"`
+- `"payments.Charge:tenant=acme"`
 
-ADR-001 is explicit about this because a lot of recourse assumes keys are safe to aggregate on.
+A policy key is not a request label. It is the name of an operation class.
 
-## Design principle: policies are untrusted input, so normalize them
+Dynamic data belongs in logs, traces, structured fields, or application-level diagnostics. It does not belong in the policy key.
 
-If policy is data, then policy can be wrong.
+ADR-001 is explicit about this because a lot of the system assumes keys are safe to aggregate on.
 
-recourse treats this as a first-class failure mode. Every `EffectivePolicy` is normalized/clamped via `EffectivePolicy.Normalize()`:
+## Policies are untrusted input, so normalize them
 
-- clamp values to documented safe ranges
-- record normalization metadata
+If policy is data, policy can be wrong.
+
+That has to be treated as a real failure mode.
+
+Every `EffectivePolicy` is normalized and clamped through `EffectivePolicy.Normalize()`:
+
+- unsafe or missing values are pushed into documented ranges
+- normalization metadata is recorded
 <!-- Claim-ID: CLM-003 -->
 
-If policy resolution fails, behavior is explicit. By default, recourse fails closed (`FailureDeny`) with `retry.NoPolicyError` (use `errors.Is(err, retry.ErrNoPolicy)`), but you can opt into "single attempt" (`FailureAllow`) or a safe fallback policy (`FailureFallback`).
+Policy resolution failure is also explicit. By default, `recourse` fails closed with `FailureDeny` and returns `retry.NoPolicyError`; callers can check it with `errors.Is(err, retry.ErrNoPolicy)`. If a service wants different behavior, it can opt into a single-attempt allow mode or a fallback policy.
 <!-- Claim-ID: CLM-002 -->
 
-This is a guardrail. It prevents accidental busy loops and storms even when configuration is imperfect.
+That is not ceremony. It is a guardrail against accidental busy loops, runaway attempts, and configuration mistakes becoming incidents.
 
-## Design principle: semantics come from classifiers rather than heuristics
+## Failure semantics belong in classifiers
 
-A timeout, a 429, and a 404 are not the same thing. Treating them the same is how you get self-inflicted incidents.
+A timeout, a 429, a 404, a connection reset, and quota exhaustion are not the same operational event.
 
-recourse uses **classifiers**: a classifier maps `(value, err)` into an `Outcome`, and the executor uses that outcome to decide whether to retry, stop, or abort.
+Treating them the same is how retry code causes self-inflicted outages.
+
+`recourse` uses classifiers. A classifier maps `(value, err)` into an `Outcome`, and the executor uses that outcome to decide whether to retry, stop, or abort.
 <!-- Claim-ID: CLM-023 -->
 
 Built-ins include:
 
-- `classify.AutoClassifier`: dispatches to `HTTPClassifier` when the error implements `HTTPError`, otherwise falls back to retry-on-error.
-- `classify.HTTPClassifier`: understands HTTP semantics (idempotent transport errors, 5xx, 408/429, plus configured extra 4xx) and honors `Retry-After`.
-- a gRPC classifier in the gRPC integration module that interprets gRPC status codes and delegates non-gRPC errors.
+- `classify.AutoClassifier`, which dispatches to HTTP semantics when the error implements `HTTPError` and otherwise falls back to retry-on-error
+- `classify.HTTPClassifier`, which understands idempotent HTTP methods, transport errors, 5xx, 408/429, configured extra 4xx, and `Retry-After`
+- a gRPC classifier in the gRPC integration module that interprets gRPC status codes and delegates non-gRPC errors
 <!-- Claim-ID: CLM-005 -->
 <!-- Claim-ID: CLM-006 -->
 <!-- Claim-ID: CLM-007 -->
 
-## Design principle: backpressure is part of the retry contract
+The important part is not that these classifiers exist. The important part is that retryability is a named semantic decision, not an accidental side effect of `if err != nil`.
 
-Retries and hedges multiply load. Without explicit backpressure, a small incident becomes a retry storm.
+## Backpressure is part of the retry contract
 
-Budgets in recourse provide a per-attempt gate:
+Retries and hedges multiply load.
+
+Without explicit backpressure, a small dependency problem can become a retry storm.
+
+Budgets in `recourse` provide a per-attempt gate:
 
 - allow the attempt
-- deny the attempt (and record why)
+- deny the attempt and record why
 - optionally return a release handle for reservation-style resources
 <!-- Claim-ID: CLM-010 -->
 
-There are built-ins like:
+Built-ins include:
 
-- `budget.UnlimitedBudget` (always allows)
-- `budget.TokenBucketBudget` (capacity plus refill rate)
+- `budget.UnlimitedBudget`
+- `budget.TokenBucketBudget`
 <!-- Claim-ID: CLM-011 -->
 
-Failure modes are explicit and show up in observability:
+Budget failure modes are explicit and observable:
 
-- empty budget name -> allowed with reason "no_budget"
-- missing registry / missing budget / nil budget -> controlled by `MissingBudgetMode` (default is fail-closed) and recorded as "budget_registry_nil", "budget_not_found", or "budget_nil"
+- empty budget name is allowed with reason `"no_budget"`
+- missing registry, missing budget, and nil budget are controlled by `MissingBudgetMode`
+- the default for missing budget dependencies is fail-closed
 <!-- Claim-ID: CLM-012 -->
 
-If you care about outage safety, budgets are the difference between "retries helped" and "retries amplified the blast radius."
+If a dependency is already overloaded, retrying harder is often the wrong answer. Budgets are how `recourse` makes that part of the contract.
 
-## Tail latency is reliability: hedging
+## Hedging is tail-latency tooling, not just parallel retries
 
-Even if average latency looks fine, p95 and p99 spikes can dominate user experience and upstream timeouts.
+Average latency can look fine while p95 and p99 latency dominate user experience.
 
-recourse supports hedging: starting a second (or third) attempt while the first is still in flight, racing them so the first success wins.
+`recourse` supports hedging: starting another attempt while the first is still in flight, then returning the first successful result.
 
-Two modes:
+Supported modes include:
 
-- Fixed delay: spawn a hedge after N milliseconds
-- Latency-aware: spawn a hedge dynamically based on recent latency stats (for example p95 or p99), using a per-key tracker
+- fixed-delay hedging
+- latency-aware hedging based on recent per-key latency stats
 
-Behavior is explicit:
+The behavior is explicit:
 
-- winner takes all: first success returns and cancels the group context, signaling other attempts to stop
-- fail-fast option: `CancelOnFirstTerminal` can stop the group on a non-retryable error; otherwise, other in-flight attempts can still win
-- budgets: hedges can have their own budget (`Hedge.Budget`) independent of the retry budget
+- first success wins and cancels the group context
+- `CancelOnFirstTerminal` can stop the group on a non-retryable outcome
+- hedges can use their own budget separate from normal retry attempts
 <!-- Claim-ID: CLM-017 -->
 
-Hedging is powerful and dangerous. It only belongs in a system that has budgets and explainability.
+Hedging is powerful and dangerous. It only belongs in systems with budgets, cancellation, and observability.
 
-## When it is failing, stop talking to it: circuit breaking
+## Circuit breaking belongs in the same envelope
 
-Retries help when failures are transient. When failures are persistent, retries are waste.
+Retries help when failures are transient.
 
-recourse includes a consecutive-failure circuit breaker with standard states:
+When failures are persistent, retries are waste.
 
-- Closed: normal operation, record successes and failures
-- Open: fail fast with `CircuitOpenError`
-- Half-open: after cooldown, allow limited probes; success closes the circuit, failure re-opens it
+`recourse` includes a consecutive-failure circuit breaker with standard states:
 
-One important detail: circuit breaking is integrated with the rest of the envelope. For example, hedging is disabled in half-open probing to avoid hammering a recovering dependency.
+- closed
+- open
+- half-open
+
+When the circuit is open, calls fail fast with `CircuitOpenError`. After cooldown, the breaker allows limited half-open probes. Success closes the circuit; failure reopens it.
+
+Because circuit breaking is integrated with the rest of the envelope, the behavior can be coordinated. For example, hedging is disabled during half-open probing so a recovering dependency is not hammered by parallel probes.
 <!-- Claim-ID: CLM-016 -->
+
+The goal is not to bolt several resilience mechanisms together. The goal is to make them cooperate.
 
 ## Explainability: timelines and observer hooks
 
-Retries hide behavior unless you surface it deliberately. If you cannot answer "what happened on each attempt, and why", you do not really control your retry system.
+Retry behavior is invisible unless you deliberately surface it.
 
-recourse gives you two complementary paths:
+During an incident, “the call failed” is not enough.
 
-### Timeline capture (best for debugging)
+You usually need to know:
 
-You can capture an `observe.Timeline` on demand:
+- how many attempts happened
+- why each attempt was retryable or terminal
+- whether budget/backpressure allowed the attempt
+- how long each attempt took
+- what backoff was chosen
+- whether the final failure was exhaustion, cancellation, denial, or a terminal classification
+
+`recourse` gives you two complementary paths.
+
+### Timeline capture
+
+For debugging, capture an `observe.Timeline` on demand:
 
 ```go
 ctx, capture := observe.RecordTimeline(ctx)
 
 user, err := recourse.DoValue(ctx, "user-service.GetUser", op)
 
-// After the call:
 tl := capture.Timeline()
 for _, a := range tl.Attempts {
     // a.Outcome, a.Err, a.Backoff, a.IsHedge, a.BudgetAllowed, ...
 }
 ```
 
+A representative timeline might tell this story:
+
+```text
+attempt=0 reason=http_503 budget_allowed=true backoff=50ms err=upstream 503
+attempt=1 reason=http_503 budget_allowed=true backoff=100ms err=upstream 503
+attempt=2 reason=success budget_allowed=true backoff=0s err=<nil>
+```
+
 The timeline records per-attempt timings, outcomes, errors, backoff decisions, and budget gating, plus call-level attributes when present.
 <!-- Claim-ID: CLM-013 -->
 
-### Streaming observers (best for metrics/logging/tracing)
+### Streaming observers
 
-For logs, metrics, and tracing integrations, implement `observe.Observer`. The observer receives lifecycle events, attempt events, hedge spawn events, and budget decision events.
+For logs, metrics, and tracing integrations, implement `observe.Observer`.
+
+The OpenTelemetry integration lives in `integrations/otel` as a separate module, so tracing support is available without adding OTel dependencies to the core library. It can record attempts as span events by default, or as child spans when you want per-attempt trace structure.
+
+Observers receive lifecycle events, attempt events, hedge spawn events, and budget decision events.
 <!-- Claim-ID: CLM-014 -->
 
-The goal is simple: recourse does not just retry. It tells you exactly what it did.
+The OpenTelemetry integration is provided as a separate module, so tracing support is available without adding OpenTelemetry dependencies to the root module.
 
-## Operating model: remote configuration that fails safely
+The point is simple: `recourse` does not just retry. It tells you what it did.
 
-Once you accept policy-driven behavior, runtime policy updates become the obvious next step.
+## Remote configuration fails explicitly
 
-recourse supports a `controlplane.RemoteProvider` that fetches policies from an external source and caches them:
+Once retry behavior is policy-driven, runtime policy updates become the obvious next step.
+
+`recourse` supports a `controlplane.RemoteProvider` that fetches policies from an external source and caches them:
 
 - TTL caching for fetched policies
-- negative caching for not-found policies (for example 404) to prevent hot-spotting on missing keys
-- explicit fallback behavior via `MissingPolicyMode` when the source is unavailable
+- negative caching for not-found policies
+- explicit fallback behavior through `MissingPolicyMode` when the source is unavailable
 <!-- Claim-ID: CLM-018 -->
 <!-- Claim-ID: CLM-002 -->
 
-Remote config is not useful if a control plane outage turns into a service outage. The provider and executor semantics exist to make partial failure survivable and explicit.
+A control plane outage should not turn into mysterious retry behavior. Remote policy resolution has to fail visibly and deliberately.
 
-## Integration philosophy: drop-in, correctness-focused
+## Integrations should be useful without becoming a framework
 
-In Go, resilience libraries often become frameworks with heavy wrappers. recourse explicitly tries not to do that:
+Go libraries should not force a framework on users just to make a service call.
 
-- integrations target standard interfaces (`net/http`, gRPC interceptors) rather than forcing custom clients
-- the core library stays light; heavy dependencies live in separate modules
-- helpers handle correctness edge cases (like draining and closing response bodies on HTTP retries so connections can be reused)
+`recourse` keeps the root module light and pushes heavier dependencies into separate integration modules.
 
-For example, the HTTP integration (`integrations/http`) provides a `DoHTTP` helper that wraps transport errors and non-2xx responses as `StatusError` so HTTP-aware classifiers can interpret status codes and `Retry-After`. It also drains and closes failed response bodies so connections can be reused.
+The integration philosophy is:
+
+- target standard interfaces such as `net/http` and gRPC interceptors
+- keep optional dependencies optional
+- handle correctness details that are easy to get wrong at every call site
+- preserve observability through the same policy/timeline model
+
+For example, the HTTP integration wraps transport errors and non-2xx responses as `StatusError` so HTTP-aware classifiers can interpret status codes and `Retry-After`. It also drains and closes failed response bodies so connections can be reused.
 <!-- Claim-ID: CLM-008 -->
 <!-- Claim-ID: CLM-006 -->
 
-## How to adopt recourse without a rewrite
+The gRPC and OpenTelemetry integrations live in separate modules so users can opt into their dependency surface deliberately.
 
-recourse is designed for incremental adoption:
+## Adoption should be incremental
 
-- Start by using the facade API with a stable key (`Do` / `DoValue`).
-- Capture timelines when debugging matters.
-- Move to explicit executors, registries, and providers when you want a real control plane and standardized policies.
+You do not need a rewrite to use `recourse`.
+
+A reasonable adoption path is:
+
+1. Start with one idempotent or otherwise retry-safe call site.
+2. Give it a stable low-cardinality key.
+3. Use the facade API with the default policy to observe behavior.
+4. Capture a timeline in tests or staging.
+5. Move to explicit executors and policies when the call site needs standardized behavior.
+6. Add budgets before scaling retries or hedging broadly.
+7. Introduce provider-backed policy only after the governance model is clear.
 
 The call sites stay boring. The policy envelope becomes the place where reliability decisions live.
 
 ## Closing thought
 
-Retries are not a feature. They are, rather, an operational commitment.
+Retries are not a feature. They are an operational commitment.
 
-recourse tries to make that commitment explicit: policy-keyed control, bounded envelopes, protocol-aware semantics, backpressure, tail-latency tooling, and observability that tells the truth about what happened.
+`recourse` tries to make that commitment explicit: policy-keyed control, bounded envelopes, protocol-aware classification, backpressure, hedging, circuit breaking, and observability that tells the truth about what happened.
+
+That is the model I want feedback on from Go teams: not whether another retry helper should exist, but whether retry behavior deserves to be governed as policy once it crosses service boundaries.
+
+For a decision-focused intro, start with [Design overview](../design-overview.md).
+Then see [Getting started](../getting-started.md), [Adoption guide](../adoption-guide.md), [Gotchas](../gotchas.md), [Incident debugging](../incident-debugging.md), and [Migration from cenkalti/backoff](../migration/from-cenkalti-backoff.md).
