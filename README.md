@@ -10,6 +10,7 @@ Policy-driven, observable resilience for Go services: retries, hedging, circuit 
 > recourse (n.): a source of help or strength.
 
 Docs site: https://aponysus.github.io/recourse/
+
 Changelog: [CHANGELOG.md](CHANGELOG.md)
 
 ## Status

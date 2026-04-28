@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-04-28
+
+### Added
+- Executable pkg.go.dev examples for `retry`, `recourse`, `observe`, and `classify`.
+- Security policy, support guidance, and GitHub issue templates.
+
+### Changed
+- Expanded package-level documentation across public packages for clearer pkg.go.dev overviews.
+- Clarified README positioning, default quick-start behavior, production status, and Go Reference badge target.
+- Added a Go Playground link demonstrating retries with timeline capture.
+
 ## [1.1.0] - 2026-04-22
 
 ### Added
