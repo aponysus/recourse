@@ -17,14 +17,16 @@ jobs:
         with:
           go-version-file: go.mod
           check-latest: true
-      - run: go test ./... -coverprofile=coverage.out -covermode=atomic
+      - run: make test
       - if: github.event_name != 'pull_request' || github.actor != 'dependabot[bot]'
         uses: codecov/codecov-action@v4
         with:
           files: coverage.out
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
-      - run: go vet ./...
+      - run: make vet
+      - run: make examples-check
+      - run: make modules-check
       - run: make docs-reference
       - run: git diff --exit-code docs/reference
       - run: make docs-claims
