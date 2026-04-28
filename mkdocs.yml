@@ -42,6 +42,8 @@ nav:
   - Gotchas & safety checklist: gotchas.md
   - Adoption guide: adoption-guide.md
   - Incident debugging: incident-debugging.md
+  - Migration:
+      - From cenkalti/backoff: migration/from-cenkalti-backoff.md
   - Concepts:
       - Policy keys: concepts/policy-keys.md
       - Key patterns and taxonomy: concepts/key-patterns.md

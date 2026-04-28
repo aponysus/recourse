@@ -1,7 +1,7 @@
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
 
-ROOT_EXAMPLES := ./examples/http_client ./examples/background_worker
+ROOT_EXAMPLES := ./examples/http_client ./examples/background_worker ./examples/migration_backoff
 NESTED_MODULES := integrations/grpc integrations/otel examples/otel examples/prometheus
 
 .PHONY: test vet examples-check modules-check ci-check docs-reference docs-build docs-claims docs

@@ -75,19 +75,41 @@ The repository is modular by design:
 
 ## Contributing
 
+### First contribution path
+
+If you are making your first contribution, start with a change that exercises the public surface without changing core semantics:
+
+- Improve docs, examples, or migration guides.
+- Add or tighten tests around an existing behavior.
+- Add a small classifier, observer, or budget example.
+- Improve diagnostics without changing reason codes or exported fields.
+
+Avoid these areas for a first PR unless you have already discussed the design:
+
+- Policy normalization and default safety behavior.
+- Timeline fields, reason codes, and observer event semantics.
+- Public API removals or signature changes in stable `v1.x` packages.
+- Retry scheduling, hedging, or circuit-breaker behavior that can change production load.
+
+Good first PRs should be small, include the relevant test or example update, and explain the operational behavior they preserve or improve.
+
 ### Local dev loop
 
-Run tests locally:
+Run the same aggregate checks CI expects:
 
 ```bash
-go test ./...
+make ci-check
 ```
 
-Optional checks:
+This covers root tests, vet, root examples, nested integration/example modules, generated reference docs, and claim-marker validation.
+
+For a faster inner loop while editing:
 
 ```bash
-go test -race ./...
-go vet ./...
+make test
+make examples-check
+make modules-check
+make docs-build
 ```
 
 Format code:
@@ -103,10 +125,12 @@ gofmt -w .
 - Add/adjust tests when changing executor behavior, classification, or observability.
 - Keep policy keys low-cardinality (no IDs/tenants/paths in keys).
 - Keep `docs/` in sync when changing user-facing behavior.
+- Keep examples compiling; public-facing root examples are checked by `make examples-check`, and nested modules are checked by `make modules-check`.
+- If generated reference docs change, run `make docs-reference` and include the generated diff intentionally.
 
 ### Release checklist
 
 - Update `CHANGELOG.md` (move items from Unreleased into a new version entry).
-- Run tests and vet: `go test ./...` and `go vet ./...`.
-- Verify docs build if doc changes are included.
+- Run `make ci-check`.
+- Verify the docs site with `make docs-build` if doc navigation or links changed.
 - Tag the release (SemVer) and push the tag to trigger release automation.

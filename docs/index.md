@@ -127,6 +127,7 @@ Retries are only “safe” if they are observable.
 - [Gotchas & safety checklist](gotchas.md) – avoid common operational failures.
 - [Adoption guide](adoption-guide.md) – staged rollout plan.
 - [Incident debugging](incident-debugging.md) – timeline-based runbook.
+- [Migrating from cenkalti/backoff](migration/from-cenkalti-backoff.md) – translate a familiar retry loop into governed retry policy.
 - [API compatibility policy](reference/compatibility.md) – v1 stability contract.
 - [Defaults and safety model](reference/defaults-safety.md) – generated defaults and failure modes.
 - [Policy schema reference](reference/policy-schema.md) – generated field reference.

@@ -174,6 +174,7 @@ For streaming logs/metrics/tracing, implement `observe.Observer`. See the observ
 - Key patterns and taxonomy: https://aponysus.github.io/recourse/concepts/key-patterns/
 - Adoption guide: https://aponysus.github.io/recourse/adoption-guide/
 - Incident debugging: https://aponysus.github.io/recourse/incident-debugging/
+- Migration from cenkalti/backoff: https://aponysus.github.io/recourse/migration/from-cenkalti-backoff/
 - Comparison: https://aponysus.github.io/recourse/comparison/
 - Why recourse: https://aponysus.github.io/recourse/blog/why-recourse/
 - Defaults and safety model: https://aponysus.github.io/recourse/reference/defaults-safety/
