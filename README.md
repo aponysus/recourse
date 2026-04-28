@@ -16,7 +16,6 @@ Changelog: [CHANGELOG.md](CHANGELOG.md)
 ## Status
 
 v1.x — API stable, with a documented [compatibility guarantee](https://aponysus.github.io/recourse/reference/compatibility/).
-Used in production across multiple services to gate retry behavior.
 
 ## When to use recourse
 
