@@ -53,12 +53,17 @@ nav:
       - Circuit Breaking: concepts/circuit-breaking.md
       - Remote Configuration: concepts/remote-configuration.md
       - Integrations: concepts/integrations.md
-      - Architecture decisions: concepts/architecture-decisions.md
+      - Architecture decisions:
+          - Overview: concepts/architecture-decisions.md
+          - "ADR 001: Low-cardinality policy keys": adr/001-low-cardinality-keys.md
+          - "ADR 003: Policy normalization": adr/003-policy-normalization.md
   - Reference:
       - API compatibility policy: reference/compatibility.md
       - Defaults and safety model: reference/defaults-safety.md
       - Policy schema reference: reference/policy-schema.md
       - Reason codes & timeline fields: reference/reason-codes.md
+      - Claims ledger: claims-ledger.md
   - Extending: extending.md
   - Contributing:
       - Onboarding: onboarding.md
+      - ADR template: adr/template.md

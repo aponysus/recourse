@@ -7,7 +7,7 @@ Security fixes are provided for the latest v1.x release line.
 | Version | Supported |
 | --- | --- |
 | v1.x | Yes |
-| v0.x | No |
+| Older release lines | No |
 
 ## Reporting a Vulnerability
 

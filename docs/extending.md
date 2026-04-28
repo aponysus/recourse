@@ -6,7 +6,7 @@ This document describes the extension pattern used by `recourse` and how to plug
 
 ## Extension points
 
-`recourse` supports (or will support) extension via these interfaces:
+`recourse` supports extension via these interfaces:
 
 - **Classifiers** (`classify.Classifier`): decide whether an attempt outcome is success, retryable, non-retryable, or abort.
 - **Budgets** (`budget.Budget`): gate attempts to prevent retry/hedge storms.

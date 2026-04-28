@@ -3,8 +3,8 @@ module github.com/aponysus/recourse/examples/otel
 go 1.25.0
 
 require (
-	github.com/aponysus/recourse v1.1.0
-	github.com/aponysus/recourse/integrations/otel v0.0.0-00010101000000-000000000000
+	github.com/aponysus/recourse v1.2.0
+	github.com/aponysus/recourse/integrations/otel v1.2.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.21.0
 	go.opentelemetry.io/otel/sdk v1.43.0
