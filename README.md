@@ -12,6 +12,11 @@ Policy-driven, observable resilience for Go services: retries, hedging, circuit 
 Docs site: https://aponysus.github.io/recourse/
 Changelog: [CHANGELOG.md](CHANGELOG.md)
 
+## Status
+
+v1.x — API stable, with a documented [compatibility guarantee](https://aponysus.github.io/recourse/reference/compatibility/).
+Used in production across multiple services to gate retry behavior.
+
 ## When to use recourse
 
 - You have multiple services and want consistent retry behavior.
@@ -68,6 +73,8 @@ func main() {
 	_ = err
 }
 ```
+
+[Run a retry + timeline example in Go Playground](https://go.dev/play/p/AjNOC90vnpb)
 
 For application startup, wire explicit policies into an executor and install it before the first call:
 
