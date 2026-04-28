@@ -26,13 +26,14 @@ These packages are part of the v1.x stability contract:
 - `github.com/aponysus/recourse/integrations/http`
 <!-- Claim-ID: CLM-020 -->
 
-## Separate module: gRPC integration
+## Separate modules: gRPC and OpenTelemetry integrations
 
-The gRPC integration is a separate module:
+The gRPC and OpenTelemetry integrations are separate modules:
 
 - `github.com/aponysus/recourse/integrations/grpc`
+- `github.com/aponysus/recourse/integrations/otel`
 
-It follows SemVer in its own module. The intent is to version it in lockstep with the root module, but it is independently tagged.
+They follow SemVer in their own modules. The intent is to version them in lockstep with the root module, but they are independently tagged.
 <!-- Claim-ID: CLM-020 -->
 
 ## Not part of the API contract

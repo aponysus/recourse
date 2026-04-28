@@ -80,3 +80,48 @@ func main() {
 ### Example
 
 For a runnable example, see `integrations/grpc/example/main.go`.
+
+---
+
+## OpenTelemetry integration (`integrations/otel`)
+
+### What it does
+
+- Provides `otelrecourse.Observer`, an `observe.Observer` implementation that emits OpenTelemetry spans for recourse calls.
+- Records stable call attributes such as policy key, attempt count, policy source, policy mode, and normalization metadata.
+- Records attempts as span events by default.
+- Can optionally create a child span per attempt with `WithSpanPerAttempt(true)`.
+- Keeps OpenTelemetry dependencies out of the root module by living in a separate module.
+
+### Constraints and safety
+
+- **Low-cardinality attributes only**: the integration records reason codes and policy metadata, not arbitrary request data.
+- **Completed-call observer**: spans are emitted from `OnSuccess` / `OnFailure` using the completed `observe.Timeline`.
+- **Separate dependency surface**: importing this module brings in OpenTelemetry packages; users who do not need tracing do not pay that dependency cost.
+
+### Example
+
+```go
+package main
+
+import (
+    "context"
+
+    otelrecourse "github.com/aponysus/recourse/integrations/otel"
+    "github.com/aponysus/recourse/retry"
+    "go.opentelemetry.io/otel"
+)
+
+func main() {
+    observer := otelrecourse.NewObserver(
+        otel.Tracer("my-service"),
+        otelrecourse.WithSpanPerAttempt(true),
+    )
+    exec := retry.NewDefaultExecutor(retry.WithObserver(observer))
+
+    _ = exec
+    _ = context.Background()
+}
+```
+
+For a runnable stdout exporter example, see `examples/otel`.

@@ -24,6 +24,8 @@ The observer receives detailed lifecycle events:
 
 Reason codes are documented in the references; use them for consistent metrics.
 
+For OpenTelemetry tracing, use the first-class `github.com/aponysus/recourse/integrations/otel` module. It converts completed recourse timelines into spans with low-cardinality policy and attempt attributes.
+
 ## Attempt metadata in context
 
 Each attempt context includes `observe.AttemptInfo` (attempt index, retry index, hedge fields, policy ID), accessible via:

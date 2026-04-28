@@ -184,7 +184,7 @@ For streaming logs/metrics/tracing, implement `observe.Observer`. See the observ
 
 - v1.x follows SemVer; exported APIs in the core packages are stable.
 - Stable packages: `recourse`, `retry`, `policy`, `observe`, `classify`, `budget`, `controlplane`, `circuit`, `hedge`, `integrations/http`.
-- `integrations/grpc` is a separate module with its own tags (intended to track root releases).
+- `integrations/grpc` and `integrations/otel` are separate modules with their own tags (intended to track root releases).
 - `internal` and `examples` are not part of the API contract.
 - Telemetry fields and reason codes are treated as stable and documented in the generated references.
 <!-- Claim-ID: CLM-020 -->

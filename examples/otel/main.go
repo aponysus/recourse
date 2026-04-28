@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 
+	otelrecourse "github.com/aponysus/recourse/integrations/otel"
 	"github.com/aponysus/recourse/policy"
 	"github.com/aponysus/recourse/retry"
 	"go.opentelemetry.io/otel"
@@ -27,7 +28,7 @@ func main() {
 	}()
 	otel.SetTracerProvider(provider)
 
-	observer := NewOTelObserver(otel.Tracer("recourse-otel-example"))
+	observer := otelrecourse.NewObserver(otel.Tracer("recourse-otel-example"))
 	exec := retry.NewExecutor(
 		retry.WithObserver(observer),
 		retry.WithPolicy("example.otel", policy.MaxAttempts(2)),

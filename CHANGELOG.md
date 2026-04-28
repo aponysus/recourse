@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Executable pkg.go.dev examples for `retry`, `recourse`, `observe`, and `classify`.
+- First-class OpenTelemetry observer integration as the separate `integrations/otel` module.
 - Security policy, support guidance, and GitHub issue templates.
 
 ### Changed
