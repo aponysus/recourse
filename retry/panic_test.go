@@ -48,14 +48,6 @@ func TestExecutor_RecoverPanics_PolicyProvider(t *testing.T) {
 	}
 }
 
-type panicClassifierRegistry struct{}
-
-func (panicClassifierRegistry) Get(name string) (classify.Classifier, bool) {
-	panic("registry panic")
-}
-
-// Registry is concrete, so we test a panicking classifier instead.
-
 type panicClassifier struct{}
 
 func (panicClassifier) Classify(value any, err error) classify.Outcome {

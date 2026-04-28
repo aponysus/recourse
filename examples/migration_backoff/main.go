@@ -9,7 +9,6 @@ import (
 	"github.com/aponysus/recourse/classify"
 	"github.com/aponysus/recourse/observe"
 	"github.com/aponysus/recourse/policy"
-	"github.com/aponysus/recourse/recourse"
 	"github.com/aponysus/recourse/retry"
 )
 
@@ -67,13 +66,6 @@ func newExecutor() *retry.Executor {
 			policy.Budget("unlimited"),
 		),
 	)
-}
-
-func chargeWithFacade(ctx context.Context, gateway *paymentGateway) (Receipt, error) {
-	recourse.Init(newExecutor())
-	return recourse.DoValue[Receipt](ctx, "payments.Charge", func(ctx context.Context) (Receipt, error) {
-		return gateway.Charge(ctx, "acct_123", 2500)
-	})
 }
 
 func chargeWithExecutor(ctx context.Context, exec *retry.Executor, gateway *paymentGateway) (Receipt, error) {

@@ -27,6 +27,16 @@ jobs:
       - run: make vet
       - run: make examples-check
       - run: make modules-check
-      - run: make docs-reference
-      - run: git diff --exit-code docs/reference
+      - run: make docs-reference-check
       - run: make docs-claims
+      - run: make docs-build
+
+  staticcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          check-latest: true
+      - run: make staticcheck

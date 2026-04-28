@@ -43,6 +43,7 @@ func TestTimelineCaptureFromContext_NotPresent(t *testing.T) {
 	if _, ok := observe.TimelineCaptureFromContext(context.Background()); ok {
 		t.Fatal("expected no capture in context")
 	}
+	//lint:ignore SA1012 this test verifies nil context handling.
 	if _, ok := observe.TimelineCaptureFromContext(nil); ok {
 		t.Fatal("expected no capture for nil context")
 	}

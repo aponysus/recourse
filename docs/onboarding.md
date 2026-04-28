@@ -101,7 +101,7 @@ Run the same aggregate checks CI expects:
 make ci-check
 ```
 
-This covers root tests, vet, root examples, nested integration/example modules, generated reference docs, and claim-marker validation.
+This covers root tests, vet, root examples, nested integration/example modules, generated reference docs, claim-marker validation, and strict docs builds.
 
 For a faster inner loop while editing:
 
@@ -111,6 +111,15 @@ make examples-check
 make modules-check
 make docs-build
 ```
+
+Additional quality and security checks:
+
+```bash
+make staticcheck
+make govulncheck
+```
+
+`make govulncheck` queries the Go vulnerability database, so it needs network access and can report new findings even when source code has not changed.
 
 Format code:
 

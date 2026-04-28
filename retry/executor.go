@@ -679,7 +679,7 @@ func doValueWithTimeline[T any](ctx context.Context, exec *Executor, key policy.
 
 		opAny := func(c context.Context) (any, error) { return op(c) }
 
-		valAny, err, outcome, success := exec.doRetryGroup(
+		valAny, outcome, success, err := exec.doRetryGroup(
 			ctx,
 			key,
 			opAny,

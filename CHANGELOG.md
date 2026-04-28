@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Staticcheck and govulncheck Makefile targets, with staticcheck in CI and govulncheck in a scheduled/manual workflow.
+
+### Changed
+- Added strict docs-site builds to CI and documented separate Go baselines for optional integration modules.
+
 ## [1.2.0] - 2026-04-28
 
 ### Added

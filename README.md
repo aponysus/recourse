@@ -193,7 +193,7 @@ For streaming logs/metrics/tracing, implement `observe.Observer`. See the observ
 ## Versioning
 
 - Releases: see `CHANGELOG.md` or GitHub releases.
-- Go version: see `go.mod` (currently 1.23)
+- Go version: the root module follows `go.mod` (currently 1.23); optional integration modules declare their own minimum Go versions in their nested `go.mod` files.
 <!-- Claim-ID: CLM-021 -->
 
 ## Contributing

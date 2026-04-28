@@ -76,6 +76,7 @@ func main() {
 - **Unary only**: there is no streaming interceptor in this package.
 - **Key mapping must remain low-cardinality**: method strings are stable, but avoid embedding IDs in custom key functions.
 - **Retry behavior depends on your policy**: use a classifier appropriate for gRPC.
+- **Separate Go baseline**: this module has its own `go.mod` and currently requires Go 1.24 because of its gRPC dependency graph.
 
 ### Example
 
@@ -98,6 +99,7 @@ For a runnable example, see `integrations/grpc/example/main.go`.
 - **Low-cardinality attributes only**: the integration records reason codes and policy metadata, not arbitrary request data.
 - **Completed-call observer**: spans are emitted from `OnSuccess` / `OnFailure` using the completed `observe.Timeline`.
 - **Separate dependency surface**: importing this module brings in OpenTelemetry packages; users who do not need tracing do not pay that dependency cost.
+- **Separate Go baseline**: this module has its own `go.mod` and currently requires Go 1.25 because of its OpenTelemetry dependency graph.
 
 ### Example
 

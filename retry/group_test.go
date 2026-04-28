@@ -54,7 +54,7 @@ func TestDoRetryGroup_CancelOnFirstTerminal(t *testing.T) {
 	recordAttempt := func(context.Context, observe.AttemptRecord) {}
 	op := func(context.Context) (any, error) { return nil, errors.New("nope") }
 
-	_, err, out, success := exec.doRetryGroup(
+	_, out, success, err := exec.doRetryGroup(
 		context.Background(),
 		key,
 		op,
@@ -104,7 +104,7 @@ func TestDoRetryGroup_TriggerNextCheckDefault(t *testing.T) {
 		}
 	}
 
-	val, err, out, success := exec.doRetryGroup(
+	val, out, success, err := exec.doRetryGroup(
 		context.Background(),
 		key,
 		op,
@@ -152,7 +152,7 @@ func TestDoRetryGroup_ContextCanceled(t *testing.T) {
 		cancel()
 	}()
 
-	_, err, out, success := exec.doRetryGroup(
+	_, out, success, err := exec.doRetryGroup(
 		ctx,
 		key,
 		op,
@@ -230,7 +230,7 @@ func TestDoRetryGroup_EmitsOnHedgeCancel_WhenPrimaryWins(t *testing.T) {
 		}
 	}
 
-	val, err, out, success := exec.doRetryGroup(
+	val, out, success, err := exec.doRetryGroup(
 		context.Background(),
 		key,
 		op,
@@ -314,7 +314,7 @@ func TestDoRetryGroup_EmitsOnHedgeCancel_WhenOuterContextCanceled(t *testing.T) 
 		}
 	}()
 
-	_, err, out, success := exec.doRetryGroup(
+	_, out, success, err := exec.doRetryGroup(
 		ctx,
 		key,
 		op,
@@ -424,7 +424,7 @@ func runMissingTriggerModeTest(t *testing.T, mode FailureMode, expectHedge bool)
 		return "primary", nil
 	}
 
-	_, err, out, success := exec.doRetryGroup(
+	_, out, success, err := exec.doRetryGroup(
 		context.Background(),
 		key,
 		op,

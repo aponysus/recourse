@@ -58,5 +58,12 @@ See the generated references:
 
 ## Go version support
 
-The supported Go version is defined by `go.mod` (currently 1.23).
+The root module's supported Go version is defined by the repository root `go.mod` (currently 1.23).
+
+Optional integration modules define their own minimum Go versions in their nested `go.mod` files because their dependency graphs are intentionally isolated from the root module:
+
+- `integrations/grpc`: currently Go 1.24.
+- `integrations/otel`: currently Go 1.25.
+
+Example modules are not part of the API contract and may use the Go version required by the integration they demonstrate.
 <!-- Claim-ID: CLM-021 -->

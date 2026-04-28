@@ -83,7 +83,7 @@ func (e *Executor) doRetryGroup(
 	cmeta classifierMeta,
 	lastBackoff time.Duration,
 	recordAttempt func(context.Context, observe.AttemptRecord),
-) (any, error, classify.Outcome, bool) {
+) (any, classify.Outcome, bool, error) {
 
 	// Check if hedging is enabled.
 
@@ -369,7 +369,7 @@ func (e *Executor) doRetryGroup(
 		case res := <-results:
 			if res.outcome.Kind == classify.OutcomeSuccess {
 				finishGroup(errHedgeWinnerSuccess)
-				return res.val, nil, res.outcome, true
+				return res.val, res.outcome, true, nil
 			}
 
 			// It's a failure
@@ -379,7 +379,7 @@ func (e *Executor) doRetryGroup(
 			// Fail Fast check
 			if pol.Hedge.CancelOnFirstTerminal {
 				if res.outcome.Kind == classify.OutcomeNonRetryable || res.outcome.Kind == classify.OutcomeAbort {
-					return res.val, res.err, res.outcome, false
+					return res.val, res.outcome, false, res.err
 				}
 			}
 
@@ -393,13 +393,13 @@ func (e *Executor) doRetryGroup(
 
 			if active == 0 {
 				// All launched attempts failed.
-				return lastRel.val, lastRel.err, lastRel.outcome, false
+				return lastRel.val, lastRel.outcome, false, lastRel.err
 			}
 
 		// If active > 0, we have hope. Continue waiting.
 
 		case <-ctx.Done(): // Outer context cancelled
-			return nil, ctx.Err(), classify.Outcome{Kind: classify.OutcomeAbort, Reason: "context_canceled"}, false
+			return nil, classify.Outcome{Kind: classify.OutcomeAbort, Reason: "context_canceled"}, false, ctx.Err()
 		}
 	}
 }
