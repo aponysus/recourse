@@ -7,11 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-05-20
+
 ### Added
 - Staticcheck and govulncheck Makefile targets, with staticcheck in CI and govulncheck in a scheduled/manual workflow.
 
 ### Changed
 - Added strict docs-site builds to CI and documented separate Go baselines for optional integration modules.
+- Updated integration and example module requirements to reference the `v1.2.1` root release.
+
+### Fixed
+- Retry budgets now apply only to retries (`attempt>=1`), so the base attempt (`attempt=0`) is not denied, charged, or emitted as a budget decision.
 
 ## [1.2.0] - 2026-04-28
 

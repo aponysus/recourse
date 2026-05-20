@@ -59,7 +59,7 @@ The repository is modular by design:
 | `controlplane` | Policy providers (local/static and remote) |
 | `observe` | Timeline types, observer interface, attempt context metadata |
 | `classify` | Outcome classifiers + registry |
-| `budget` | Budgets/backpressure (per-attempt gating + registry) |
+| `budget` | Budgets/backpressure (retry/hedge gating + registry) |
 | `hedge` | Hedge triggers/latency tracking |
 
 ## Suggested reading order
