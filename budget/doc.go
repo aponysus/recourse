@@ -1,9 +1,10 @@
-// Package budget defines per-attempt backpressure gates for recourse.
+// Package budget defines retry and hedge backpressure gates for recourse.
 //
 // A Budget decides whether a retry or hedge attempt should be allowed before
-// the executor runs it. Budgets are looked up by name through a Registry and
-// return a Decision with a stable reason code, which lets callers see budget
-// denials in timelines and observer events.
+// the executor runs it. The base attempt of a call is not budget gated. Budgets
+// are looked up by name through a Registry and return a Decision with a stable
+// reason code, which lets callers see budget denials in timelines and observer
+// events.
 //
 // Use UnlimitedBudget when you want retry behavior without load limiting. Use
 // TokenBucketBudget when retry or hedge attempts should consume capacity from a

@@ -22,6 +22,15 @@ func (denySecondAttemptBudget) AllowAttempt(_ context.Context, _ policy.PolicyKe
 	return budget.Decision{Allowed: true, Reason: budget.ReasonAllowed}
 }
 
+type denyAllBudget struct {
+	calls int32
+}
+
+func (b *denyAllBudget) AllowAttempt(_ context.Context, _ policy.PolicyKey, _ int, _ budget.AttemptKind, _ policy.BudgetRef) budget.Decision {
+	atomic.AddInt32(&b.calls, 1)
+	return budget.Decision{Allowed: false, Reason: budget.ReasonBudgetDenied}
+}
+
 type countingReleaseBudget struct {
 	allowCalls int32
 	releases   int32
@@ -53,6 +62,105 @@ func (o *budgetEventObserver) OnBudgetDecision(_ context.Context, e observe.Budg
 }
 func (o *budgetEventObserver) OnSuccess(context.Context, policy.PolicyKey, observe.Timeline) {}
 func (o *budgetEventObserver) OnFailure(context.Context, policy.PolicyKey, observe.Timeline) {}
+
+func TestExecutor_RetryBudgetSkipsBaseAttempt_FastPath(t *testing.T) {
+	key := policy.PolicyKey{Name: "x"}
+
+	db := &denyAllBudget{}
+	budgets := budget.NewRegistry()
+	budgets.MustRegister("b", db)
+
+	exec := NewExecutorFromOptions(ExecutorOptions{
+		Budgets: budgets,
+		Provider: &controlplane.StaticProvider{
+			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
+				key: {
+					Key: key,
+					Retry: policy.RetryPolicy{
+						MaxAttempts: 1,
+						Budget:      policy.BudgetRef{Name: "b", Cost: 1},
+					},
+				},
+			},
+		},
+	})
+
+	calls := 0
+	got, err := DoValue[int](context.Background(), exec, key, func(context.Context) (int, error) {
+		calls++
+		return 42, nil
+	})
+	if err != nil {
+		t.Fatalf("err=%v, want nil", err)
+	}
+	if got != 42 {
+		t.Fatalf("got=%d, want 42", got)
+	}
+	if calls != 1 {
+		t.Fatalf("calls=%d, want 1", calls)
+	}
+	if budgetCalls := atomic.LoadInt32(&db.calls); budgetCalls != 0 {
+		t.Fatalf("budget calls=%d, want 0", budgetCalls)
+	}
+}
+
+func TestExecutor_RetryBudgetSkipsBaseAttempt_Timeline(t *testing.T) {
+	key := policy.PolicyKey{Name: "x"}
+
+	db := &denyAllBudget{}
+	budgets := budget.NewRegistry()
+	budgets.MustRegister("b", db)
+
+	exec := NewExecutorFromOptions(ExecutorOptions{
+		Budgets: budgets,
+		Provider: &controlplane.StaticProvider{
+			Policies: map[policy.PolicyKey]policy.EffectivePolicy{
+				key: {
+					Key: key,
+					Retry: policy.RetryPolicy{
+						MaxAttempts: 2,
+						Budget:      policy.BudgetRef{Name: "b", Cost: 1},
+					},
+				},
+			},
+		},
+	})
+	exec.sleep = func(context.Context, time.Duration) error { return nil }
+
+	opErr := errors.New("first attempt error")
+	calls := 0
+	ctx, capture := observe.RecordTimeline(context.Background())
+	_, err := DoValue[int](ctx, exec, key, func(context.Context) (int, error) {
+		calls++
+		return 0, opErr
+	})
+	tl := capture.Timeline()
+
+	if calls != 1 {
+		t.Fatalf("calls=%d, want 1", calls)
+	}
+	if err != opErr {
+		t.Fatalf("err=%v, want %v", err, opErr)
+	}
+	if budgetCalls := atomic.LoadInt32(&db.calls); budgetCalls != 1 {
+		t.Fatalf("budget calls=%d, want 1", budgetCalls)
+	}
+	if len(tl.Attempts) != 2 {
+		t.Fatalf("attempts=%d, want 2", len(tl.Attempts))
+	}
+	if !tl.Attempts[0].BudgetAllowed {
+		t.Fatalf("attempt[0].BudgetAllowed=false, want true")
+	}
+	if tl.Attempts[0].BudgetReason != budget.ReasonNoBudget {
+		t.Fatalf("attempt[0].BudgetReason=%q, want %q", tl.Attempts[0].BudgetReason, budget.ReasonNoBudget)
+	}
+	if tl.Attempts[1].BudgetAllowed {
+		t.Fatalf("attempt[1].BudgetAllowed=true, want false")
+	}
+	if tl.Attempts[1].BudgetReason != budget.ReasonBudgetDenied {
+		t.Fatalf("attempt[1].BudgetReason=%q, want %q", tl.Attempts[1].BudgetReason, budget.ReasonBudgetDenied)
+	}
+}
 
 func TestExecutor_BudgetDeniesSecondAttempt_StopsRetryAndReturnsLastErr(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
@@ -108,7 +216,7 @@ func TestExecutor_BudgetDeniesSecondAttempt_StopsRetryAndReturnsLastErr(t *testi
 	}
 }
 
-func TestExecutor_MissingBudgetName_DeniesAttemptsByDefault(t *testing.T) {
+func TestExecutor_MissingBudgetName_DeniesRetriesByDefault(t *testing.T) {
 	key := policy.PolicyKey{Name: "x"}
 
 	exec := NewExecutorFromOptions(ExecutorOptions{
@@ -135,19 +243,24 @@ func TestExecutor_MissingBudgetName_DeniesAttemptsByDefault(t *testing.T) {
 	})
 	tl := capture.Timeline()
 
-	// Should fail immediately with budget error, 0 calls
 	if err == nil {
 		t.Fatalf("expected error")
 	}
-	if calls != 0 {
-		t.Fatalf("calls=%d, want 0", calls)
+	if calls != 1 {
+		t.Fatalf("calls=%d, want 1", calls)
 	}
-	if len(tl.Attempts) != 1 {
-		// Denials still record one attempt in the timeline.
-		t.Fatalf("attempts=%d, want 1", len(tl.Attempts))
+	if len(tl.Attempts) != 2 {
+		t.Fatalf("attempts=%d, want 2", len(tl.Attempts))
 	}
 
-	rec := tl.Attempts[0]
+	if !tl.Attempts[0].BudgetAllowed {
+		t.Fatalf("attempt[0].BudgetAllowed=false, want true")
+	}
+	if tl.Attempts[0].BudgetReason != budget.ReasonNoBudget {
+		t.Fatalf("attempt[0].BudgetReason=%q, want %q", tl.Attempts[0].BudgetReason, budget.ReasonNoBudget)
+	}
+
+	rec := tl.Attempts[1]
 	if rec.BudgetAllowed {
 		t.Fatalf("BudgetAllowed=true, want false")
 	}
@@ -196,9 +309,12 @@ func TestExecutor_MissingBudgetName_AllowsAttemptsWithUnsafeOptIn(t *testing.T) 
 		if !rec.BudgetAllowed {
 			t.Fatalf("attempt[%d].BudgetAllowed=false, want true", i)
 		}
-		// In UnsafeAllow, reason should still be "budget_not_found" but Allowed=true
-		if rec.BudgetReason != budget.ReasonBudgetNotFound {
-			t.Fatalf("attempt[%d].BudgetReason=%q, want %q", i, rec.BudgetReason, budget.ReasonBudgetNotFound)
+		wantReason := budget.ReasonBudgetNotFound
+		if i == 0 {
+			wantReason = budget.ReasonNoBudget
+		}
+		if rec.BudgetReason != wantReason {
+			t.Fatalf("attempt[%d].BudgetReason=%q, want %q", i, rec.BudgetReason, wantReason)
 		}
 	}
 }
@@ -240,10 +356,10 @@ func TestExecutor_BudgetRelease_CalledOncePerAllowedAttempt(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("calls=%d, want 2", calls)
 	}
-	if got, want := atomic.LoadInt32(&cb.allowCalls), int32(2); got != want {
+	if got, want := atomic.LoadInt32(&cb.allowCalls), int32(1); got != want {
 		t.Fatalf("allowCalls=%d, want %d", got, want)
 	}
-	if got, want := atomic.LoadInt32(&cb.releases), int32(2); got != want {
+	if got, want := atomic.LoadInt32(&cb.releases), int32(1); got != want {
 		t.Fatalf("releases=%d, want %d", got, want)
 	}
 }
@@ -259,7 +375,7 @@ func TestExecutor_AllowAttempt_ReleaseIsIdempotent(t *testing.T) {
 	})
 
 	// Call allowAttempt directly
-	d, allowed := exec.allowAttempt(context.Background(), key, policy.BudgetRef{Name: "b", Cost: 1}, 0, budget.KindRetry)
+	d, allowed := exec.allowAttempt(context.Background(), key, policy.BudgetRef{Name: "b", Cost: 1}, 1, budget.KindRetry)
 	if !allowed {
 		t.Fatal("expected allowed")
 	}
@@ -303,7 +419,23 @@ func TestExecutor_AllowAttempt_EmptyBudgetNameAllows(t *testing.T) {
 	obs := &budgetEventObserver{}
 	exec := &Executor{observer: obs}
 
-	d, ok := exec.allowAttempt(context.Background(), policy.PolicyKey{}, policy.BudgetRef{Name: "   ", Cost: 1}, 0, budget.KindRetry)
+	d, ok := exec.allowAttempt(context.Background(), policy.PolicyKey{}, policy.BudgetRef{Name: "   ", Cost: 1}, 1, budget.KindRetry)
+	if !ok || !d.Allowed || d.Reason != budget.ReasonNoBudget {
+		t.Fatalf("decision=%+v ok=%v, want allowed/no_budget", d, ok)
+	}
+	if len(obs.events) != 0 {
+		t.Fatalf("expected no budget events, got %d", len(obs.events))
+	}
+}
+
+func TestExecutor_AllowAttempt_BaseRetryAttemptBypassesBudget(t *testing.T) {
+	obs := &budgetEventObserver{}
+	exec := &Executor{
+		observer:          obs,
+		missingBudgetMode: FailureDeny,
+	}
+
+	d, ok := exec.allowAttempt(context.Background(), policy.PolicyKey{Name: "op"}, policy.BudgetRef{Name: "b", Cost: 2}, 0, budget.KindRetry)
 	if !ok || !d.Allowed || d.Reason != budget.ReasonNoBudget {
 		t.Fatalf("decision=%+v ok=%v, want allowed/no_budget", d, ok)
 	}
@@ -319,7 +451,7 @@ func TestExecutor_AllowAttempt_BudgetRegistryNil_Denies(t *testing.T) {
 		missingBudgetMode: FailureDeny,
 	}
 
-	d, ok := exec.allowAttempt(context.Background(), policy.PolicyKey{Name: "op"}, policy.BudgetRef{Name: "b", Cost: 2}, 0, budget.KindRetry)
+	d, ok := exec.allowAttempt(context.Background(), policy.PolicyKey{Name: "op"}, policy.BudgetRef{Name: "b", Cost: 2}, 1, budget.KindRetry)
 	if ok || d.Allowed || d.Reason != budget.ReasonBudgetRegistryNil {
 		t.Fatalf("decision=%+v ok=%v, want denied/budget_registry_nil", d, ok)
 	}
@@ -343,7 +475,7 @@ func TestExecutor_AllowAttempt_MissingBudget_AllowUnsafe(t *testing.T) {
 		missingBudgetMode: FailureAllowUnsafe,
 	}
 
-	d, ok := exec.allowAttempt(context.Background(), policy.PolicyKey{Name: "op"}, policy.BudgetRef{Name: "missing", Cost: 1}, 0, budget.KindRetry)
+	d, ok := exec.allowAttempt(context.Background(), policy.PolicyKey{Name: "op"}, policy.BudgetRef{Name: "missing", Cost: 1}, 1, budget.KindRetry)
 	if !ok || !d.Allowed || d.Reason != budget.ReasonBudgetNotFound {
 		t.Fatalf("decision=%+v ok=%v, want allowed/budget_not_found", d, ok)
 	}
@@ -366,7 +498,7 @@ func TestExecutor_AllowAttempt_PanicInBudget(t *testing.T) {
 		recoverPanics: true,
 	}
 
-	d, ok := exec.allowAttempt(context.Background(), policy.PolicyKey{Name: "op"}, policy.BudgetRef{Name: "panic", Cost: 1}, 0, budget.KindRetry)
+	d, ok := exec.allowAttempt(context.Background(), policy.PolicyKey{Name: "op"}, policy.BudgetRef{Name: "panic", Cost: 1}, 1, budget.KindRetry)
 	if ok || d.Allowed || d.Reason != budget.ReasonPanicInBudget {
 		t.Fatalf("decision=%+v ok=%v, want denied/panic_in_budget", d, ok)
 	}
@@ -389,12 +521,12 @@ func TestExecutor_AllowAttempt_DefaultReason(t *testing.T) {
 		budgets:  budgets,
 	}
 
-	d, ok := exec.allowAttempt(context.Background(), policy.PolicyKey{Name: "op"}, policy.BudgetRef{Name: "allow", Cost: 1}, 0, budget.KindRetry)
+	d, ok := exec.allowAttempt(context.Background(), policy.PolicyKey{Name: "op"}, policy.BudgetRef{Name: "allow", Cost: 1}, 1, budget.KindRetry)
 	if !ok || !d.Allowed || d.Reason != budget.ReasonAllowed {
 		t.Fatalf("decision=%+v ok=%v, want allowed/allowed", d, ok)
 	}
 
-	d, ok = exec.allowAttempt(context.Background(), policy.PolicyKey{Name: "op"}, policy.BudgetRef{Name: "deny", Cost: 1}, 0, budget.KindRetry)
+	d, ok = exec.allowAttempt(context.Background(), policy.PolicyKey{Name: "op"}, policy.BudgetRef{Name: "deny", Cost: 1}, 1, budget.KindRetry)
 	if ok || d.Allowed || d.Reason != budget.ReasonBudgetDenied {
 		t.Fatalf("decision=%+v ok=%v, want denied/budget_denied", d, ok)
 	}

@@ -44,7 +44,7 @@ In more detail:
   <!-- Claim-ID: CLM-019 -->
 - Classifiers decide whether an outcome should retry, stop, or abort.
   <!-- Claim-ID: CLM-023 -->
-- Budgets gate attempts as backpressure.
+- Budgets gate retry and hedge attempts as backpressure.
   <!-- Claim-ID: CLM-010 -->
 - Behavior is explainable through structured timelines and observer events.
   <!-- Claim-ID: CLM-013 -->

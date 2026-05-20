@@ -25,7 +25,7 @@ type Decision struct {
 	Release func()
 }
 
-// Budget gates attempts to prevent retry/hedge storms.
+// Budget gates retry and hedge attempts to prevent retry/hedge storms.
 type Budget interface {
 	AllowAttempt(ctx context.Context, key policy.PolicyKey, attemptIdx int, kind AttemptKind, ref policy.BudgetRef) Decision
 }

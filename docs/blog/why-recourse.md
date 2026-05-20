@@ -157,12 +157,15 @@ Retries and hedges multiply load.
 
 Without explicit backpressure, a small dependency problem can become a retry storm.
 
-Budgets in `recourse` provide a per-attempt gate:
+Budgets in `recourse` provide a retry and hedge gate:
 
 - allow the attempt
 - deny the attempt and record why
 - optionally return a release handle for reservation-style resources
 <!-- Claim-ID: CLM-010 -->
+
+The first/base attempt is not charged to the retry budget. Budgeting starts when
+the executor launches a retry attempt; hedges can have a separate hedge budget.
 
 Built-ins include:
 

@@ -9,7 +9,7 @@ This document describes the extension pattern used by `recourse` and how to plug
 `recourse` supports extension via these interfaces:
 
 - **Classifiers** (`classify.Classifier`): decide whether an attempt outcome is success, retryable, non-retryable, or abort.
-- **Budgets** (`budget.Budget`): gate attempts to prevent retry/hedge storms.
+- **Budgets** (`budget.Budget`): gate retry and hedge attempts to prevent retry/hedge storms.
 - **Hedge triggers** (`hedge.HedgeTrigger`): decide when to spawn hedged attempts.
 - **Observers** (`observe.Observer`): receive structured attempt/timeline events.
 
@@ -54,6 +54,8 @@ Budget decisions surface on `observe.AttemptRecord` as `BudgetAllowed` and `Budg
 - `"budget_not_found"`: policy referenced a budget name not in the registry.
 - `"budget_denied"`: budget denied the attempt.
 - `"panic_in_budget"`: budget panicked and `RecoverPanics` converted it to a denial.
+
+The base attempt (`attempt=0`) bypasses retry budget checks. Retry budgets apply to retry attempts (`attempt>=1`), and hedge budgets apply to hedge attempts.
 
 ### Wiring budgets
 

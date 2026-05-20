@@ -16,6 +16,10 @@ func (e *Executor) allowAttempt(ctx context.Context, key policy.PolicyKey, ref p
 		return budget.Decision{Allowed: true, Reason: budget.ReasonNoBudget}, true
 	}
 
+	if kind == budget.KindRetry && attemptIdx == 0 {
+		return budget.Decision{Allowed: true, Reason: budget.ReasonNoBudget}, true
+	}
+
 	ref.Name = strings.TrimSpace(ref.Name)
 	if ref.Name == "" {
 		return budget.Decision{Allowed: true, Reason: budget.ReasonNoBudget}, true

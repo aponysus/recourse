@@ -60,7 +60,7 @@ In `recourse`, call sites supply a **key** (e.g., `"payments.Charge"`). Policies
 - backoff/jitter
 - per-attempt and overall timeouts
 - classifier selection (how to interpret errors/results)
-- optional budgets/backpressure (whether to allow each attempt)
+- optional budgets/backpressure (whether to allow retry and hedge attempts)
 
 This makes behavior consistent, tunable, and observable without re-implementing retry loops everywhere.
 
@@ -117,7 +117,7 @@ Retries are only “safe” if they are observable.
 - **Policies + providers**: `policy.EffectivePolicy` resolved via `controlplane.PolicyProvider` (today: in-process static).
 - **Retry executor**: bounded attempts with backoff/jitter and per-attempt/overall timeouts.
 - **Classifiers**: pluggable `(value, err) → Outcome` so retry decisions are protocol/domain-aware.
-- **Budgets/backpressure**: per-attempt gates to prevent retry storms (with optional release semantics).
+- **Budgets/backpressure**: retry and hedge gates to prevent retry storms (with optional release semantics).
 - **Observability**: structured `observe.Timeline` plus streaming hooks via `observe.Observer`.
 
 ## Where to go next

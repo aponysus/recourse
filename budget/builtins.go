@@ -19,7 +19,7 @@ func (UnlimitedBudget) AllowAttempt(_ context.Context, _ policy.PolicyKey, _ int
 // TokenBucketBudget is a simple token-bucket implementation.
 //
 // It starts full (capacity tokens) and refills at refillPerSecond tokens/second.
-// Each attempt consumes ref.Cost tokens (defaulting to 1).
+// Each budgeted attempt consumes ref.Cost tokens (defaulting to 1).
 type TokenBucketBudget struct {
 	mu sync.Mutex
 

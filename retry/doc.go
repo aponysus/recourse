@@ -7,9 +7,9 @@
 //
 // Each call supplies a policy.PolicyKey. The executor resolves a
 // policy.EffectivePolicy through a controlplane.PolicyProvider, classifies each
-// attempt result with classify.Classifier, gates attempts through budget.Budget
-// when configured, and emits observe.Observer events or an observe.Timeline when
-// requested.
+// attempt result with classify.Classifier, gates retry attempts after the base
+// attempt through budget.Budget when configured, and emits observe.Observer
+// events or an observe.Timeline when requested.
 //
 // Missing dependencies are controlled by FailureMode settings. Policies fail
 // closed by default, while classifiers and hedge triggers can fall back to safe

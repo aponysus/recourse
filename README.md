@@ -35,7 +35,7 @@ v1.x — API stable, with a documented [compatibility guarantee](https://aponysu
 - **Policy keys**: call sites provide a stable key; policies define the retry envelope.
   <!-- Claim-ID: CLM-019 -->
 - **Classifiers**: outcomes are protocol-aware instead of "retry on any error".
-- **Backpressure**: budgets gate attempts to prevent load amplification.
+- **Backpressure**: budgets gate retries and hedges to prevent load amplification.
   <!-- Claim-ID: CLM-010 -->
 - **Explainability**: timelines and observer hooks make behavior debuggable.
   <!-- Claim-ID: CLM-013 -->

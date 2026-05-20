@@ -186,8 +186,13 @@ func TestExecutor_Observer_BudgetDecisions(t *testing.T) {
 	})
 	exec.sleep = func(context.Context, time.Duration) error { return nil }
 
-	// Run successful with unlimited budget
+	// Run successful with unlimited budget on the retry attempt.
+	calls := 0
 	_, err := DoValue[int](context.Background(), exec, key, func(ctx context.Context) (int, error) {
+		calls++
+		if calls == 1 {
+			return 0, errors.New("retryable")
+		}
 		return 1, nil
 	})
 	if err != nil {
@@ -200,6 +205,9 @@ func TestExecutor_Observer_BudgetDecisions(t *testing.T) {
 	evt := obs.budgetDecisions[0]
 	if !evt.Allowed {
 		t.Errorf("expected allowed=true")
+	}
+	if evt.Attempt != 1 {
+		t.Errorf("expected attempt=1, got %d", evt.Attempt)
 	}
 	if evt.Reason != budget.ReasonAllowed {
 		t.Errorf("expected reason=allowed, got %s", evt.Reason)
@@ -225,7 +233,7 @@ func TestExecutor_Observer_BudgetDecisions(t *testing.T) {
 	obs.budgetDecisions = nil // reset
 
 	_, err = DoValue[int](context.Background(), exec, key, func(ctx context.Context) (int, error) {
-		return 1, nil
+		return 0, errors.New("retryable")
 	})
 	if err == nil {
 		t.Fatal("expected error due to missing budget")
@@ -237,6 +245,9 @@ func TestExecutor_Observer_BudgetDecisions(t *testing.T) {
 	evt = obs.budgetDecisions[0]
 	if evt.Allowed {
 		t.Errorf("expected allowed=false")
+	}
+	if evt.Attempt != 1 {
+		t.Errorf("expected attempt=1, got %d", evt.Attempt)
 	}
 	if evt.Reason != budget.ReasonBudgetNotFound {
 		t.Errorf("expected reason=budget_not_found, got %s", evt.Reason)
