@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Opt-in `controlplane.WithLKGTTL` fallback to the last successfully normalized remote policy for a bounded window beyond the fresh cache TTL, with `policy_source=lkg` metadata.
+- `PolicyCache.SetWithLKG` and `GetLKG` for explicit stale-policy retention and retrieval without changing existing cache method signatures.
+
+### Changed
+- `RemoteProvider` coalesces overlapping source fetches per policy key using the first caller's context; waiting callers can cancel independently.
+- Remote policy lookups respect caller cancellation before serving cached or LKG policies. Confirmed missing policies discard retained LKG; failures never extend its lifetime.
+
 ## [1.2.1] - 2026-05-20
 
 ### Added

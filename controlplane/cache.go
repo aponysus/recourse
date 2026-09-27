@@ -8,9 +8,10 @@ import (
 )
 
 type cacheEntry struct {
-	policy    policy.EffectivePolicy
-	expiresAt time.Time
-	found     bool // true if policy exists, false if this is a negative cache entry
+	policy       policy.EffectivePolicy
+	expiresAt    time.Time
+	lkgExpiresAt time.Time
+	found        bool // true if policy exists, false if this is a negative cache entry
 }
 
 // PolicyCache is a thread-safe cache for policies with TTL support.
@@ -28,10 +29,9 @@ func NewPolicyCache() *PolicyCache {
 }
 
 // Get retrieves a policy from the cache.
-// Returns (policy, found=true) if a valid entry exists (even if it's a negative cache hit).
-// Returns (policy, found=false) if the entry is missing or expired.
-// If the entry is a negative cache hit, the returned policy will be zero value and found will be true.
-// Check entry.found to distinguish between "cached missing" and "not in cache".
+// foundInCache is true for fresh positive and negative entries. A negative hit
+// returns a zero policy and isNegativeCache=true. Expired entries are misses;
+// use GetLKG to retrieve a policy retained for fallback.
 func (c *PolicyCache) Get(key policy.PolicyKey) (pol policy.EffectivePolicy, foundInCache bool, isNegativeCache bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -41,26 +41,53 @@ func (c *PolicyCache) Get(key policy.PolicyKey) (pol policy.EffectivePolicy, fou
 		return policy.EffectivePolicy{}, false, false
 	}
 
-	if c.now().After(entry.expiresAt) {
+	if !c.now().Before(entry.expiresAt) {
 		return policy.EffectivePolicy{}, false, false
 	}
 
 	return entry.policy, true, !entry.found
 }
 
-// Set adds or updates a policy in the cache.
+// Set adds or updates a policy without retaining it for LKG fallback.
 func (c *PolicyCache) Set(key policy.PolicyKey, pol policy.EffectivePolicy, ttl time.Duration) {
+	c.SetWithLKG(key, pol, ttl, 0)
+}
+
+// SetWithLKG caches a policy for ttl, retaining it for an additional lkgTTL
+// after expiry. Non-positive ttl disables fresh caching; non-positive lkgTTL
+// disables LKG. Callers must validate the policy before storing it.
+func (c *PolicyCache) SetWithLKG(key policy.PolicyKey, pol policy.EffectivePolicy, ttl, lkgTTL time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.entries[key] = cacheEntry{
+	if ttl < 0 {
+		ttl = 0
+	}
+	entry := cacheEntry{
 		policy:    pol,
 		expiresAt: c.now().Add(ttl),
 		found:     true,
 	}
+	if lkgTTL > 0 {
+		entry.lkgExpiresAt = entry.expiresAt.Add(lkgTTL)
+	}
+	c.entries[key] = entry
 }
 
-// SetMissing records a negative cache entry (policy not found).
+// GetLKG retrieves a positive policy within its configured LKG retention
+// window, including while fresh. It does not extend expiry or change metadata.
+func (c *PolicyCache) GetLKG(key policy.PolicyKey) (policy.EffectivePolicy, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	entry, ok := c.entries[key]
+	if !ok || !entry.found || entry.lkgExpiresAt.IsZero() || !c.now().Before(entry.lkgExpiresAt) {
+		return policy.EffectivePolicy{}, false
+	}
+	return entry.policy, true
+}
+
+// SetMissing records a negative cache entry, discarding any retained LKG.
 func (c *PolicyCache) SetMissing(key policy.PolicyKey, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -71,7 +98,7 @@ func (c *PolicyCache) SetMissing(key policy.PolicyKey, ttl time.Duration) {
 	}
 }
 
-// Invalidate removes an entry from the cache.
+// Invalidate removes both the fresh and retained LKG entry from the cache.
 func (c *PolicyCache) Invalidate(key policy.PolicyKey) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

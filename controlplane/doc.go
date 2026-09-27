@@ -7,6 +7,7 @@
 //
 // StaticProvider is the in-process provider for local or embedded policies.
 // RemoteProvider fetches policies from a Source and caches positive and
-// negative lookups so a remote control plane can be introduced without forcing
-// each call site to know where policies live.
+// negative lookups. Concurrent lookups for the same key share a source fetch.
+// WithLKGTTL optionally retains a last-known-good policy beyond the fresh TTL
+// for use on source errors, with policy source metadata set to "lkg".
 package controlplane
