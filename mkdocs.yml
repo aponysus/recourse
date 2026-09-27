@@ -64,7 +64,6 @@ nav:
       - Defaults and safety model: reference/defaults-safety.md
       - Policy schema reference: reference/policy-schema.md
       - Reason codes & timeline fields: reference/reason-codes.md
-      - Claims ledger: claims-ledger.md
   - Extending: extending.md
   - Contributing:
       - Onboarding: onboarding.md

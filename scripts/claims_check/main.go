@@ -35,7 +35,7 @@ func main() {
 		fail(err)
 	}
 
-	ledgerPath := filepath.Join(root, "docs", "claims-ledger.md")
+	ledgerPath := filepath.Join(root, "maintenance", "claims-ledger.md")
 	entries, ledgerErrs := parseLedger(ledgerPath)
 
 	claimIDs, scanErrs := scanClaimIDs(root)
@@ -88,9 +88,6 @@ func scanClaimIDs(root string) (map[string][]string, []error) {
 
 	ids := make(map[string][]string)
 	for _, path := range targets {
-		if filepath.Base(path) == "claims-ledger.md" {
-			continue
-		}
 		body, err := os.ReadFile(path)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("read %s: %w", path, err))

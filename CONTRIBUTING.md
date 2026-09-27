@@ -24,6 +24,12 @@ All contributors are expected to adhere to our [Code of Conduct](CODE_OF_CONDUCT
 *   **Low cardinality**: Policy keys must not contain request-scoped data.
 *   **Observability**: New features should emit events to the `observe` package.
 
+## Documentation checks
+
+When changing documented behavior, update the [claims ledger](maintenance/claims-ledger.md) and the corresponding `Claim-ID` markers. The ledger is a maintainer reference kept outside the published documentation.
+
+Run `make docs-claims` to validate the markers and `make docs-build` to check the documentation site. Both checks run in CI.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [Apache-2.0 License](LICENSE).

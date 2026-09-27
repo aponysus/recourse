@@ -1,7 +1,10 @@
 # Claims ledger
 
-This ledger tracks verified behavioral claims in docs and README, with code references.
+This maintainer reference tracks verified behavioral claims in docs and README, with code references.
 Policy documents under `docs/reference/` are authoritative for policy statements.
+
+Run `make docs-claims` from the repository root to validate claim markers against this ledger.
+This file lives outside `docs/` so it is not included in the published documentation site.
 
 | Claim-ID | Claim | Doc location | Code source | Status | Notes |
 |---|---|---|---|---|---|
