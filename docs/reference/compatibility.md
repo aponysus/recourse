@@ -62,7 +62,7 @@ The root module's supported Go version is defined by the repository root `go.mod
 
 Optional integration modules define their own minimum Go versions in their nested `go.mod` files because their dependency graphs are intentionally isolated from the root module:
 
-- `integrations/grpc`: currently Go 1.24.
+- `integrations/grpc`: currently Go 1.25.
 - `integrations/otel`: currently Go 1.25.
 
 Example modules are not part of the API contract and may use the Go version required by the integration they demonstrate.

@@ -5,7 +5,7 @@ go 1.25.0
 replace github.com/aponysus/recourse => ../../
 
 require (
-	github.com/aponysus/recourse v1.2.1
+	github.com/aponysus/recourse v1.3.0
 	go.opentelemetry.io/otel v1.45.0
 	go.opentelemetry.io/otel/sdk v1.45.0
 	go.opentelemetry.io/otel/trace v1.45.0

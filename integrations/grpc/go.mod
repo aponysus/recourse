@@ -5,7 +5,7 @@ go 1.25.0
 replace github.com/aponysus/recourse => ../../
 
 require (
-	github.com/aponysus/recourse v1.2.1
+	github.com/aponysus/recourse v1.3.0
 	google.golang.org/grpc v1.83.2
 )
 

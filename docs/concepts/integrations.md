@@ -76,7 +76,7 @@ func main() {
 - **Unary only**: there is no streaming interceptor in this package.
 - **Key mapping must remain low-cardinality**: method strings are stable, but avoid embedding IDs in custom key functions.
 - **Retry behavior depends on your policy**: use a classifier appropriate for gRPC.
-- **Separate Go baseline**: this module has its own `go.mod` and currently requires Go 1.24 because of its gRPC dependency graph.
+- **Separate Go baseline**: this module has its own `go.mod` and currently requires Go 1.25 because of its gRPC dependency graph.
 
 ### Example
 

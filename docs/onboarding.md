@@ -140,6 +140,9 @@ gofmt -w .
 ### Release checklist
 
 - Update `CHANGELOG.md` (move items from Unreleased into a new version entry).
+- Align the root-module requirements in `integrations/*/go.mod` and `examples/*/go.mod` with the release version, along with any requirements on separately versioned integration modules. Local `replace` directives allow validation before the tags are published.
 - Run `make ci-check`.
+- Run `make staticcheck`.
 - Verify the docs site with `make docs-build` if doc navigation or links changed.
-- Tag the release (SemVer) and push the tag to trigger release automation.
+- Commit the release preparation, then tag that commit for each module: `vX.Y.Z`, `integrations/grpc/vX.Y.Z`, and `integrations/otel/vX.Y.Z`.
+- Publish the module tags together (for example, with an atomic push of those three explicit tags). The root `vX.Y.Z` tag triggers the GitHub release workflow; integration tags make the corresponding Go modules available at the aligned versions.

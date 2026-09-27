@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-27
+
 ### Added
 - Opt-in `controlplane.WithLKGTTL` fallback to the last successfully normalized remote policy for a bounded window beyond the fresh cache TTL, with `policy_source=lkg` metadata.
 - `PolicyCache.SetWithLKG` and `GetLKG` for explicit stale-policy retention and retrieval without changing existing cache method signatures.
@@ -14,6 +16,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `RemoteProvider` coalesces overlapping source fetches per policy key using the first caller's context; waiting callers can cancel independently.
 - Remote policy lookups respect caller cancellation before serving cached or LKG policies. Confirmed missing policies discard retained LKG; failures never extend its lifetime.
+- Updated integration and example module requirements to reference the `v1.3.0` root release and aligned the OpenTelemetry example with `integrations/otel/v1.3.0`.
+- Updated the gRPC integration to gRPC `v1.83.2` and raised its minimum Go version from 1.24 to 1.25. The root module continues to support Go 1.23.
+- Updated OpenTelemetry integration and example dependencies to `v1.45.0`.
+- Updated the docs toolchain to MkDocs Material `9.7.7` and pymdown-extensions `11.0.1`.
+
+### Upgrade notes
+- LKG remains disabled by default. Enable it with `controlplane.WithLKGTTL(duration)`; the duration is additional retention beyond the fresh cache TTL. LKG is returned with a nil error, so it remains usable under `FailureDeny`.
+- Fetch coalescing is automatic. The first caller's context controls the shared fetch; its cancellation or deadline expiry fails that fetch for all waiters. Other callers can cancel their own waits independently. Sources must respect context cancellation.
+- Coalescing reduces overlapping fetches; it does not add a cooldown for sequential failures. See [Remote Configuration](docs/concepts/remote-configuration.md) for the full cache and cancellation semantics.
 
 ## [1.2.1] - 2026-05-20
 
