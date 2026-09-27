@@ -2,67 +2,52 @@
 
 > recourse (n.): a source of help or strength.
 
-Policy-driven, observable resilience for Go services: retries, hedging, circuit breaking, and budgets.
+`recourse` coordinates resilience for Go services. Retries, hedging, circuit breaking, timeouts, and budgets work together under a shared policy, with structured visibility into execution.
+
+Call sites provide a stable **policy key**. Local or remote policies define how calls handle failures, slow responses, and additional load. Teams can tune that behavior consistently across services without rebuilding resilience controls at every call site.
 
 New here? Start with [Design overview](design-overview.md), then move to [Getting started](getting-started.md).
 
 ## Why `recourse`?
 
-Retry logic is deceptively easy to write and notoriously hard to operate.
+A slow or failing dependency forces several decisions: whether to wait, start another attempt, reject the call, or limit additional work. Those decisions affect both latency and load.
 
-- **Resilience code drifts**: each service ends up with slightly different retry semantics, timeouts, logging, and metrics.
-- **Naive retries amplify outages**: retries turn “a little latency” into “a lot more load” unless there is explicit backpressure.
-- **Protocol/domain semantics matter**: a timeout, a 429, and a 404 should not all be treated the same.
-- **Debuggability is non-negotiable**: when an incident happens, you need to answer “what happened on each attempt, and why?”.
+`recourse` brings these controls into one execution path:
 
-`recourse` centralizes resilience behavior behind a low-cardinality **policy key** and makes every decision observable.
+| What you need to control | What recourse provides |
+| --- | --- |
+| Transient failures | [Retries](concepts/policies.md) with bounded attempts, backoff, and classifiers that decide which outcomes warrant another attempt. |
+| Slow responses | [Hedging](concepts/hedging.md) that can start additional attempts after a fixed delay or a latency-based trigger. |
+| Repeated dependency failures | [Circuit breaking](concepts/circuit-breaking.md) that rejects calls while the circuit is open and probes for recovery after a cooldown. |
+| Additional load | [Budgets](concepts/budgets.md) that allow or deny retry and hedge attempts. |
+| Time spent on a call | Per-attempt and overall [timeouts](concepts/policies.md) configured through policy. |
+| Incident diagnosis | [Timelines and observer hooks](concepts/observability.md) that expose attempt outcomes, timing, and execution decisions. |
+<!-- Claim-ID: CLM-019 -->
+<!-- Claim-ID: CLM-023 -->
+<!-- Claim-ID: CLM-017 -->
+<!-- Claim-ID: CLM-016 -->
+<!-- Claim-ID: CLM-010 -->
+<!-- Claim-ID: CLM-013 -->
+<!-- Claim-ID: CLM-014 -->
 
-Concretely, `recourse` gives you:
-
-- **Deterministic envelopes**: bounded attempts, bounded backoff, and explicit timeouts.
-  <!-- Claim-ID: CLM-019 -->
-- **Domain-aware retry decisions**: pluggable classifiers (instead of “retry on any error”).
-- **Backpressure**: per-attempt budgets to prevent retry storms.
-- **Structured observability**: timelines and hooks that make behavior explainable in production.
-  <!-- Claim-ID: CLM-013 -->
-  <!-- Claim-ID: CLM-014 -->
-
-## The problem with ad-hoc retries
-
-This is a common shape:
-
-```go
-var lastErr error
-for attempt := 0; attempt < 3; attempt++ {
-	if err := callDependency(ctx); err == nil {
-		return nil
-	} else {
-		lastErr = err
-	}
-	time.Sleep(time.Duration(attempt+1) * 50 * time.Millisecond)
-}
-return lastErr
-```
-
-But production requirements pile up quickly:
-
-- Is the error retryable (HTTP 500 vs 404 vs 429)? Should we treat `context.Canceled` differently?
-- Are we respecting **per-attempt** timeouts vs **overall** timeouts?
-- Are we emitting consistent logs/metrics/traces across *all* call sites?
-- Do we have **backpressure** so retries don’t turn an outage into a storm?
-- When this goes wrong at 3am, can we reconstruct the exact sequence of attempts and decisions?
+The controls also account for one another. When a circuit breaker probes for recovery, hedging is disabled so the probe does not launch extra requests. Configured budgets limit the additional work from retries and hedges.
 
 ## What “policy-driven” means
 
-In `recourse`, call sites supply a **key** (e.g., `"payments.Charge"`). Policies decide the retry envelope for that key:
+Call sites supply a stable, low-cardinality **key**, such as `"payments.Charge"`. The provider resolves a policy for that key, and the executor applies its configured behavior:
+<!-- Claim-ID: CLM-025 -->
 
-- maximum attempts
-- backoff/jitter
-- per-attempt and overall timeouts
-- classifier selection (how to interpret errors/results)
-- optional budgets/backpressure (whether to allow retry and hedge attempts)
+- Attempt limits, backoff, and jitter.
+- Hedge limits and triggers for starting concurrent attempts.
+- Circuit breaker thresholds and recovery cooldowns.
+- Per-attempt and overall timeouts.
+- Classifier selection to interpret errors and results.
+- Budgets to gate retries and hedges.
 
-This makes behavior consistent, tunable, and observable without re-implementing retry loops everywhere.
+Policies can live in your application through `StaticProvider` or come from an external source through `RemoteProvider`. The remote provider caches policies, coalesces concurrent fetches, and offers opt-in last-known-good fallback during source failures. See [Remote Configuration](concepts/remote-configuration.md).
+<!-- Claim-ID: CLM-018 -->
+
+This separates the operation from its resilience configuration: the call site keeps doing its work while the policy defines how that work is protected.
 
 ## Quick start
 
@@ -89,6 +74,8 @@ func main() {
 }
 ```
 
+This minimal example uses the default policy, which provides bounded retries. Hedging, circuit breaking, timeouts, and budget limits are configured explicitly. See [Getting started](getting-started.md) to install your policies and executor at startup.
+
 When you need to know what happened, request a timeline:
 
 ```go
@@ -105,7 +92,7 @@ for _, a := range tl.Attempts {
 
 ## Observability-first
 
-Retries are only “safe” if they are observable.
+When a call fails or takes longer than expected, you need to know which policy ran, which attempts were launched, and what stopped further work.
 
 `recourse` captures a structured `observe.Timeline` (attempt timings, outcomes, budget decisions, errors) and can also stream attempt/timeline events to your own logging/metrics/tracing via `observe.Observer`.
 <!-- Claim-ID: CLM-013 -->
@@ -114,10 +101,10 @@ Retries are only “safe” if they are observable.
 ## What’s inside
 
 - **Policy keys**: stable, low-cardinality keys (`"svc.Method"`) that select behavior.
-- **Policies + providers**: `policy.EffectivePolicy` resolved via `controlplane.PolicyProvider` (today: in-process static).
-- **Retry executor**: bounded attempts with backoff/jitter and per-attempt/overall timeouts.
-- **Classifiers**: pluggable `(value, err) → Outcome` so retry decisions are protocol/domain-aware.
-- **Budgets/backpressure**: retry and hedge gates to prevent retry storms (with optional release semantics).
+- **Policies + providers**: `policy.EffectivePolicy` resolved through in-process `controlplane.StaticProvider` or cached `controlplane.RemoteProvider` lookups.
+- **Execution**: `retry.Executor` coordinates retries, hedging, circuit breaking, and timeouts according to policy.
+- **Classifiers**: pluggable `(value, err) → Outcome` decisions to retry, stop, or abort based on protocol and domain semantics.
+- **Budgets/backpressure**: gates on retry and hedge attempts to control additional load.
 - **Observability**: structured `observe.Timeline` plus streaming hooks via `observe.Observer`.
 
 ## Where to go next
