@@ -285,7 +285,9 @@ Once retry behavior is policy-driven, runtime policy updates become the obvious 
 
 - TTL caching for fetched policies
 - negative caching for not-found policies
-- explicit fallback behavior through `MissingPolicyMode` when the source is unavailable
+- coalescing of concurrent source fetches for the same policy key
+- opt-in, time-bounded last-known-good policies through `WithLKGTTL` when the source fails
+- explicit fallback behavior through `MissingPolicyMode` when no usable policy remains
 <!-- Claim-ID: CLM-018 -->
 <!-- Claim-ID: CLM-002 -->
 

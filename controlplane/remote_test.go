@@ -99,8 +99,9 @@ func TestRemoteProvider_Expiration(t *testing.T) {
 		},
 	}
 
-	// Very short TTL
-	provider := NewRemoteProvider(source, WithCacheTTL(10*time.Millisecond))
+	clock := &fakeClock{now: time.Unix(0, 0)}
+	provider := NewRemoteProvider(source, WithCacheTTL(time.Second))
+	provider.cache.nowFn = clock.Now
 
 	// First call
 	_, _ = provider.GetEffectivePolicy(context.Background(), key)
@@ -108,8 +109,7 @@ func TestRemoteProvider_Expiration(t *testing.T) {
 		t.Errorf("expected 1 call, got %d", source.Calls)
 	}
 
-	// Wait for expiration
-	time.Sleep(20 * time.Millisecond)
+	clock.Advance(time.Second)
 
 	// Second call - should expire and re-fetch
 	_, _ = provider.GetEffectivePolicy(context.Background(), key)
